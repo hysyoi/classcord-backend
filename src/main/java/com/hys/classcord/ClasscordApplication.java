@@ -1,13 +1,13 @@
-package com.hys.classcordbackend;
+package com.hys.classcord;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class ClasscordBackendApplication {
+public class ClasscordApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(ClasscordBackendApplication.class, args);
+        SpringApplication.run(ClasscordApplication.class, args);
     }
 
 }

@@ -1,4 +1,4 @@
-package com.hys.classcordbackend;
+package com.hys.classcord;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
