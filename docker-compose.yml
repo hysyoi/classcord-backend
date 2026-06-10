@@ -1,0 +1,41 @@
+services:
+  # 1. PostgreSQL 資料庫服務
+  postgres:
+    image: postgres:16-alpine
+    container_name: classcord_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: classcord
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # 2. pgAdmin 4 圖形化管理工具
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: classcord_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@email.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "8181:80"
+    depends_on:
+      - postgres
+
+  # 3. Redis 服務
+  redis:
+    image: redis:7.2-alpine
+    container_name: classcord_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

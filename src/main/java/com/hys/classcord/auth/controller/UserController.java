@@ -12,18 +12,10 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/v1/users")
 @RequiredArgsConstructor
-@Tag(name = "帳戶模組 (Auth)", description = "處理使用者註冊、個人資料獲取等 API")
+@Tag(name = "使用者模組", description = "獲取使用者資料等 API")
 public class UserController {
 
     private final UserService userService;
-
-    /** 註冊全新使用者 */
-    @PostMapping
-    @Operation(summary = "註冊全新使用者", description = "傳入用戶名、Email，系統會自動生成 UUID v7 並寫入資料庫")
-    public ResponseEntity<User> registerUser(@RequestBody User user) {
-        User created = userService.createUser(user);
-        return ResponseEntity.ok(created);
-    }
 
     /** 獲取使用者資料 */
     @GetMapping("/{id}")
