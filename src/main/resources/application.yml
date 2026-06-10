@@ -3,12 +3,11 @@ spring:
     name: classcord-backend
 
   profiles:
-    active: local # ?????? local ??
+    active: local
 
   datasource:
     url: jdbc:postgresql://localhost:5432/classcord
     driver-class-name: org.postgresql.Driver
-    # ??????????????????????? application-local.yml ??
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
