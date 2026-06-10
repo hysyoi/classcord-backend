@@ -2,11 +2,10 @@ package com.hys.classcord.auth.service;
 
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.UUID;
 
 @Service
 @Transactional(readOnly = true)
@@ -15,9 +14,7 @@ public class UserService {
 
     private final UserRepository userRepository;
 
-    /**
-     * 建立全新使用者（註冊）
-     */
+    /** 建立全新使用者（註冊） */
     @Transactional
     public User createUser(User user) {
         if (userRepository.existsByEmail(user.getEmail())) {
@@ -26,11 +23,10 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    /**
-     * 根據 ID 查詢使用者
-     */
+    /** 根據 ID 查詢使用者 */
     public User getUserById(UUID id) {
-        return userRepository.findById(id)
+        return userRepository
+                .findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("找不到該使用者！"));
     }
 }

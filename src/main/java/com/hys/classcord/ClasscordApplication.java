@@ -9,5 +9,4 @@ public class ClasscordApplication {
     public static void main(String[] args) {
         SpringApplication.run(ClasscordApplication.class, args);
     }
-
 }

@@ -4,9 +4,8 @@ import com.hys.classcord.core.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import lombok.*;
-
 import java.time.OffsetDateTime;
+import lombok.*;
 
 @Entity
 @Table(name = "users")

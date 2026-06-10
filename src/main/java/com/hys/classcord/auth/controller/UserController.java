@@ -4,11 +4,10 @@ import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/v1/users")
@@ -18,9 +17,7 @@ public class UserController {
 
     private final UserService userService;
 
-    /**
-     * 註冊全新使用者
-     */
+    /** 註冊全新使用者 */
     @PostMapping
     @Operation(summary = "註冊全新使用者", description = "傳入用戶名、Email，系統會自動生成 UUID v7 並寫入資料庫")
     public ResponseEntity<User> registerUser(@RequestBody User user) {
@@ -28,9 +25,7 @@ public class UserController {
         return ResponseEntity.ok(created);
     }
 
-    /**
-     * 獲取使用者資料
-     */
+    /** 獲取使用者資料 */
     @GetMapping("/{id}")
     @Operation(summary = "獲取使用者個人資料", description = "根據網址傳入的 UUID 查詢用戶")
     public ResponseEntity<User> getUserProfile(@PathVariable UUID id) {
