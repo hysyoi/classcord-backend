@@ -99,13 +99,13 @@ public class AuthenticationController {
 
     /**
      * 統一的第三方登入/註冊接口
+     *
      * @param provider 路徑參數 (e.g., GOOGLE, GITHUB, DISCORD)
      * @param request 內含前端拿到的 idToken 或 Code
      */
     @PostMapping("/oauth/{provider}")
     public ResponseEntity<LoginResponse> oauthAuthenticate(
-            @PathVariable AuthProvider provider,
-            @Valid @RequestBody TokenRequest request) {
+            @PathVariable AuthProvider provider, @Valid @RequestBody TokenRequest request) {
 
         // 呼叫大總管，自動根據 provider 分流處理，最後拿到 Classcord 內部 JWT
         String jwtToken = oAuth2AuthService.handleOAuthLogin(provider, request.credential());
