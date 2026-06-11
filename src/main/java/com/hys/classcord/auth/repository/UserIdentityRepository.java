@@ -12,5 +12,5 @@ public interface UserIdentityRepository extends JpaRepository<UserIdentity, UUID
     Optional<UserIdentity> findByUserAndProvider(User user, AuthProvider provider);
 
     // 判定該第三方用戶是否曾經登入過
-    Optional<UserIdentity> findByProviderAndProviderUid(String provider, String providerUid);
+    Optional<UserIdentity> findByProviderAndProviderUid(AuthProvider provider, String providerUid);
 }

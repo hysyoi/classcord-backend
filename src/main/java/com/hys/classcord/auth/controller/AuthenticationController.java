@@ -3,7 +3,10 @@ package com.hys.classcord.auth.controller;
 import com.hys.classcord.auth.dto.LoginRequest;
 import com.hys.classcord.auth.dto.LoginResponse;
 import com.hys.classcord.auth.dto.RegisterRequest;
+import com.hys.classcord.auth.dto.TokenRequest;
+import com.hys.classcord.auth.enums.AuthProvider;
 import com.hys.classcord.auth.service.AuthenticationService;
+import com.hys.classcord.auth.service.OAuth2AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthenticationController {
 
     private final AuthenticationService authenticationService;
+    private final OAuth2AuthService oAuth2AuthService;
 
     /** 階段一：一般帳密註冊（暫存 Redis） */
     @PostMapping("/register")
@@ -91,5 +95,21 @@ public class AuthenticationController {
 
         // 4. 回傳 204 No Content，代表後端處理成功，且不需要回傳額外的 JSON 內容
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 統一的第三方登入/註冊接口
+     * @param provider 路徑參數 (e.g., GOOGLE, GITHUB, DISCORD)
+     * @param request 內含前端拿到的 idToken 或 Code
+     */
+    @PostMapping("/oauth/{provider}")
+    public ResponseEntity<LoginResponse> oauthAuthenticate(
+            @PathVariable AuthProvider provider,
+            @Valid @RequestBody TokenRequest request) {
+
+        // 呼叫大總管，自動根據 provider 分流處理，最後拿到 Classcord 內部 JWT
+        String jwtToken = oAuth2AuthService.handleOAuthLogin(provider, request.credential());
+
+        return ResponseEntity.ok(new LoginResponse(jwtToken));
     }
 }

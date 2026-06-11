@@ -8,4 +8,9 @@ public class AuthException extends BusinessException {
         // 把 code, message, status 通通往上丟
         super(errorCode.getCode(), errorCode.getMessage(), errorCode.getStatus());
     }
+
+    // 允許自訂更詳細的錯誤原因
+    public AuthException(AuthErrorCode errorCode, String customMessage) {
+        super(errorCode.getCode(), customMessage, errorCode.getStatus());
+    }
 }
