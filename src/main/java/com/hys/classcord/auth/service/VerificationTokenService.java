@@ -25,14 +25,15 @@ public class VerificationTokenService {
     /** 驗證並取出 Value，用完立刻單次銷毀 */
     public String verifyAndConsume(String purpose, String token) {
         String redisKey = "AUTH:" + purpose + ":" + token;
-        String value = redisTemplate.opsForValue().get(redisKey);
+
+        // 保證原子性
+        String value = redisTemplate.opsForValue().getAndDelete(redisKey);
 
         if (value == null) {
             // 這裡可以丟出自訂的 Token 過期或無效異常
             throw new AuthException(AuthErrorCode.TOKEN_EXPIRED_OR_INVALID);
         }
 
-        redisTemplate.delete(redisKey); // 一次性使用
         return value;
     }
 }

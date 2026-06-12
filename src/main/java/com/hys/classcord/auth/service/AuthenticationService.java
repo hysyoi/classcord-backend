@@ -11,14 +11,17 @@ import com.hys.classcord.auth.exception.AuthException;
 import com.hys.classcord.auth.repository.UserIdentityRepository;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
+import com.hys.classcord.core.config.AppUrlProperties;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 身份驗證(Authentication) */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -32,6 +35,7 @@ public class AuthenticationService {
     private final VerificationTokenService tokenService; // 驗證碼服務
     private final ObjectMapper objectMapper;
     private final MailService mailService; // 寄信服務
+    private final AppUrlProperties appUrlProperties; // 連結
 
     /** 一般帳密註冊（暫存 Redis 階段，不寫入 DB） */
     @Transactional // 雖然這步沒寫庫，但維持一致性
@@ -86,7 +90,8 @@ public class AuthenticationService {
             // System.out.println(activateLink);
             // System.out.println("==================================================\n");
 
-            String activateLink = "http://localhost:8080/v1/auth/activate?token=" + token;
+            String activateLink =
+                    appUrlProperties.getBackend() + "/v1/auth/activate?token=" + token;
 
             mailService.sendAuthMail(
                     normalizedEmail,
@@ -138,7 +143,7 @@ public class AuthenticationService {
                             .build();
             userIdentityRepository.save(localIdentity);
 
-            System.out.println("🎉 帳號驗證成功！數據正式落地 DB，歡迎新成員：" + pendingUser.getUsername());
+            log.info("🎉 帳號驗證成功！數據正式落地 DB，歡迎新成員：{}", pendingUser.getUsername());
 
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new RuntimeException("開通帳號失敗，資料還原異常", e);
@@ -180,7 +185,8 @@ public class AuthenticationService {
             // System.out.println(resetLink);
             // System.out.println("==================================================\n");
 
-            String resetLink = "http://localhost:8080/v1/auth/reset-password?token=" + token;
+            // 指向前端密碼重設路由
+            String resetLink = appUrlProperties.getFrontend() + "/reset-password?token=" + token;
 
             mailService.sendAuthMail(
                     normalizedEmail,
@@ -226,7 +232,7 @@ public class AuthenticationService {
         // 5. 儲存變更（也可以不寫，Spring 事務結束會自動 Dirty Checking Flush，但寫了語意更明確）
         userIdentityRepository.save(localIdentity);
 
-        System.out.println("🎉 使用者 " + user.getUsername() + " 的密碼已順利重設成功！舊連結已自動失效。");
+        log.info("🎉 使用者 {} 的密碼已順利重設成功！舊連結已自動失效。", user.getUsername());
     }
 
     // /** 一般帳密註冊 */

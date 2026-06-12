@@ -1,10 +1,9 @@
 package com.hys.classcord.auth.entity;
 
-import com.hys.classcord.core.entity.BaseEntity;
+import com.hys.classcord.core.entity.AuditableBaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import java.time.OffsetDateTime;
 import lombok.*;
 
 @Entity
@@ -13,7 +12,7 @@ import lombok.*;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class User extends BaseEntity {
+public class User extends AuditableBaseEntity {
 
     @Column(nullable = false, length = 50)
     private String username;
@@ -23,8 +22,4 @@ public class User extends BaseEntity {
 
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;
-
-    @Builder.Default
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt = OffsetDateTime.now();
 }

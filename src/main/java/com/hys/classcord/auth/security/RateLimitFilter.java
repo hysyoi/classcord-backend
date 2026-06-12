@@ -1,40 +1,32 @@
 package com.hys.classcord.auth.security;
 
-import io.github.bucket4j.Bandwidth;
-import io.github.bucket4j.Bucket;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collections;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/** 註冊與登入請求限制 */
+/** 註冊與登入請求限制 (Redis 分散式限流) */
 @Component
+@RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    // 每個 IP 對應一個 Bucket
-    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private static final int MAX_ATTEMPTS = 30; // 最大嘗試次數
+    private static final int EXPIRE_SECONDS = 60; // 限制時間（秒）
 
-    private Bucket newBucket() {
-        return Bucket.builder()
-                .addLimit(
-                        Bandwidth.builder()
-                                .capacity(10) // 最多 10 次
-                                .refillGreedy(10, Duration.ofMinutes(1)) // 每分鐘補滿 10 個
-                                .build())
-                .build();
-    }
+    private final StringRedisTemplate redisTemplate;
+    private final RedisScript<Long> rateLimitScript; // Lua 腳本
 
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-
         // 只限制登入和註冊端點
         String path = request.getRequestURI();
         if (!path.startsWith("/v1/auth/")) {
@@ -42,14 +34,56 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
-        String ip = request.getRemoteAddr();
-        Bucket bucket = buckets.computeIfAbsent(ip, k -> newBucket());
-
-        if (bucket.tryConsume(1)) {
+        // 只針對寫入型/敏感端點進行限流，排除 GET 請求（如開通帳號 /activate）
+        String method = request.getMethod();
+        if ("GET".equalsIgnoreCase(method)) {
             chain.doFilter(request, response);
-        } else {
-            response.setStatus(429); // Too Many Requests
-            response.getWriter().write("請求過於頻繁，請稍後再試");
+            return;
         }
+
+        String ip = getClientIp(request);
+        String redisKey = "RATE_LIMIT:IP:" + ip;
+
+        // 執行 Lua 腳本，保證自增與過期在 Redis 端一次完成（原子操作）
+        Long count =
+                redisTemplate.execute(
+                        rateLimitScript, // 直接傳入 Bean，不需要再寫字串
+                        Collections.singletonList(redisKey),
+                        String.valueOf(EXPIRE_SECONDS));
+
+        if (count != null && count > MAX_ATTEMPTS) {
+            response.setStatus(429);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter()
+                    .write(
+                            "{\"status\":429,\"error\":\"Too Many Requests\",\"message\":\"請求過於頻繁，請稍後再試\"}");
+            return; // 攔截
+        }
+
+        chain.doFilter(request, response);
+    }
+
+    /** 在生產環境中取得使用者真正的IP，而非代理伺服器的 */
+    private String getClientIp(HttpServletRequest request) {
+
+        // 1. 先從 X-Forwarded-For 標頭拿 IP
+        String ip = request.getHeader("X-Forwarded-For");
+
+        // 2. 如果沒有，再嘗試 X-Real-IP
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+
+        // 3. 都沒有才使用 getRemoteAddr() 兜底
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+
+        // 4. 對於多重代理，X-Forwarded-For 的值可能是 "IP1, IP2, IP3..."，第一個才是真實客戶端 IP
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+
+        return ip;
     }
 }

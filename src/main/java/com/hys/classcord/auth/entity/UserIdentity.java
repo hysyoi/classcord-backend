@@ -1,9 +1,8 @@
 package com.hys.classcord.auth.entity;
 
 import com.hys.classcord.auth.enums.AuthProvider;
-import com.hys.classcord.core.entity.BaseEntity;
+import com.hys.classcord.core.entity.AuditableBaseEntity;
 import jakarta.persistence.*;
-import java.time.OffsetDateTime;
 import lombok.*;
 
 @Entity
@@ -18,7 +17,7 @@ import lombok.*;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class UserIdentity extends BaseEntity {
+public class UserIdentity extends AuditableBaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -39,8 +38,4 @@ public class UserIdentity extends BaseEntity {
     @Setter
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
-
-    @Builder.Default
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt = OffsetDateTime.now();
 }

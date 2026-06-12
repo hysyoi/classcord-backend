@@ -3,6 +3,7 @@ package com.hys.classcord.auth.service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
@@ -10,12 +11,13 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MailService {
 
     private final JavaMailSender mailSender;
-    private final TemplateEngine templateEngine; // 🚀 注入 Thymeleaf 模板引擎
+    private final TemplateEngine templateEngine; // 注入 Thymeleaf 模板引擎
 
     private final String fromEmail = "noreply@classcord.hys-lab.com";
 
@@ -53,7 +55,7 @@ public class MailService {
             helper.setText(htmlContent, true); // 塞入渲染後的 HTML 字串
 
             mailSender.send(message);
-            System.out.println("📧 [MailService] 成功透過 Thymeleaf 模板非同步發送郵件至: " + to);
+            log.info("📧 [MailService] 成功透過 Thymeleaf 模板非同步發送郵件至: {}", to);
 
         } catch (MessagingException e) {
             throw new RuntimeException("郵件發送異常", e);

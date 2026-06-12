@@ -26,5 +26,9 @@ spring:
       port: 6379
 
 app:
-  jwt:
+  jwt: # 可能也可以抽成一個properties類
     secret-key: ${JWT_SECRET_KEY}
+    expiration-ms: 86400000 # 24小時以毫秒計算
+  urls:
+    backend: http://localhost:8080
+    frontend: http://localhost:3000

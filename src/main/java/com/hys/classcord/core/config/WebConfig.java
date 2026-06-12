@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.format.FormatterRegistry;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -16,7 +17,11 @@ public class WebConfig implements WebMvcConfigurer {
     /** 全域共用的 RestClient Bean 讓全專案的 Service 都能直接注入，避免重複構建連線工具，未來也方便在此統一配置超時或攔截器 */
     @Bean
     public RestClient restClient() {
-        return RestClient.builder().build();
+        // 設定連線與讀取超時均為 5000 毫秒 (5秒)
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(5000);
+        requestFactory.setReadTimeout(5000);
+        return RestClient.builder().requestFactory(requestFactory).build();
     }
 
     /** 核心黑魔法：註冊全局的 URL 路徑參數轉換器 繼承 WebMvcConfigurer 並重寫 addFormatters */

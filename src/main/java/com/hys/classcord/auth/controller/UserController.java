@@ -1,5 +1,6 @@
 package com.hys.classcord.auth.controller;
 
+import com.hys.classcord.auth.dto.UserProfileResponse;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -20,8 +21,8 @@ public class UserController {
     /** 獲取使用者資料 */
     @GetMapping("/{id}")
     @Operation(summary = "獲取使用者個人資料", description = "根據網址傳入的 UUID 查詢用戶")
-    public ResponseEntity<User> getUserProfile(@PathVariable UUID id) {
+    public ResponseEntity<UserProfileResponse> getUserProfile(@PathVariable UUID id) {
         User user = userService.getUserById(id);
-        return ResponseEntity.ok(user);
+        return ResponseEntity.ok(UserProfileResponse.fromEntity(user));
     }
 }

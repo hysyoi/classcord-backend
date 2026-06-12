@@ -1,10 +1,12 @@
 package com.hys.classcord.core.exception;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -45,6 +47,31 @@ public class GlobalExceptionHandler {
                                 "Internal Server Error",
                                 "message",
                                 "系統繁忙，請稍後再試",
+                                "timestamp",
+                                LocalDateTime.now().toString()));
+    }
+
+    // 統一攔截 DTO 參數驗證失敗 (400 Bad Request) */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> handleValidationException(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+
+        // 從異常物件中抽取出所有校驗失敗的欄位與對應的提示訊息
+        ex.getBindingResult()
+                .getFieldErrors()
+                .forEach(error -> errors.put(error.getField(), error.getDefaultMessage()));
+        log.warn("參數驗證失敗 -> 錯誤欄位數: {}", errors.size());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(
+                        Map.of(
+                                "status",
+                                HttpStatus.BAD_REQUEST.value(),
+                                "error",
+                                "Bad Request",
+                                "message",
+                                "輸入欄位驗證失敗，請檢查格式",
+                                "errors",
+                                errors, // 將詳細的欄位錯誤（例如: {"email": "必須是格式正確的電子郵件"}）回傳給前端
                                 "timestamp",
                                 LocalDateTime.now().toString()));
     }

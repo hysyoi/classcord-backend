@@ -3,6 +3,7 @@ package com.hys.classcord.auth.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -20,10 +21,12 @@ public class JwtUtils {
     private final long expirationMs;
 
     // 使用建構子注入，Spring 會先去 yml 撈出值，才執行這裡面的程式碼
-    public JwtUtils(@Value("${app.jwt.secret-key}") String secretString) {
-        this.key = Keys.hmacShaKeyFor(secretString.getBytes());
+    public JwtUtils(
+            @Value("${app.jwt.secret-key}") String secretString,
+            @Value("${app.jwt.expiration-ms}") long expirationMs) {
+        this.key = Keys.hmacShaKeyFor(secretString.getBytes(StandardCharsets.UTF_8)); // 明確指定字符集
         // Token 有效期：設為 1 天 (計算出 1 天的毫秒數)
-        this.expirationMs = 24 * 60 * 60 * 1000;
+        this.expirationMs = expirationMs;
     }
 
     /** 根據使用者 ID 簽發 JWT Token */

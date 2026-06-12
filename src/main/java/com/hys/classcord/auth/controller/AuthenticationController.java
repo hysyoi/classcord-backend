@@ -1,9 +1,6 @@
 package com.hys.classcord.auth.controller;
 
-import com.hys.classcord.auth.dto.LoginRequest;
-import com.hys.classcord.auth.dto.LoginResponse;
-import com.hys.classcord.auth.dto.RegisterRequest;
-import com.hys.classcord.auth.dto.TokenRequest;
+import com.hys.classcord.auth.dto.*;
 import com.hys.classcord.auth.enums.AuthProvider;
 import com.hys.classcord.auth.service.AuthenticationService;
 import com.hys.classcord.auth.service.OAuth2AuthService;
@@ -11,7 +8,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.net.URI;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +24,9 @@ public class AuthenticationController {
 
     private final AuthenticationService authenticationService;
     private final OAuth2AuthService oAuth2AuthService;
+
+    @Value("${app.urls.frontend}")
+    private String frontendUrl;
 
     /** 階段一：一般帳密註冊（暫存 Redis） */
     @PostMapping("/register")
@@ -46,7 +49,10 @@ public class AuthenticationController {
 
         authenticationService.activateUser(token);
 
-        return ResponseEntity.ok().build();
+        // 302 重導向到前端登入頁
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(frontendUrl + "/login?activated=true"))
+                .build();
     }
 
     /** 忘記密碼階段一：輸入信箱，發送重設憑證 */
@@ -61,10 +67,9 @@ public class AuthenticationController {
     /** 忘記密碼階段二：提交新密碼與 Token 執行變更 */
     @PostMapping("/reset-password")
     @Operation(summary = "執行密碼重設", description = "傳入信箱連結中的 Token 以及你想設定的新密碼，核對成功即覆蓋舊密碼（僅限本地用戶）。")
-    public ResponseEntity<Void> resetPassword(
-            @RequestParam String token, @RequestParam String newPassword) {
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         // 呼叫忘記密碼第二階段：持憑證正式覆蓋密碼
-        authenticationService.executePasswordReset(token, newPassword);
+        authenticationService.executePasswordReset(request.token(), request.newPassword());
         return ResponseEntity.ok().build();
     }
 
