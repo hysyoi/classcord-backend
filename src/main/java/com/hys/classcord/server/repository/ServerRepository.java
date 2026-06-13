@@ -1,6 +1,6 @@
-package com.hys.classcord.auth.repository;
+package com.hys.classcord.server.repository;
 
-import com.hys.classcord.auth.entity.User;
+import com.hys.classcord.server.entity.Server;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import java.util.Optional;
@@ -13,16 +13,12 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface UserRepository extends JpaRepository<User, UUID> {
-
-    // 檢查重複註冊
-    boolean existsByEmail(String email);
-
-    Optional<User> findByEmail(String email);
-
-    // 在建立或加入伺服器時，鎖定該使用者以防止 Race Condition
+public interface ServerRepository extends JpaRepository<Server, UUID> {
+    // 在查詢伺服器時，立刻對該行數據加上排他鎖（Pessimistic Write Lock）
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints({@QueryHint(name = "javax.persistence.lock.timeout", value = "2000")}) // 限制最多等 2 秒
-    @Query("SELECT u FROM User u WHERE u.id = :id")
-    Optional<User> findByIdForUpdate(@Param("id") UUID id);
+    @Query("SELECT s FROM Server s WHERE s.id = :id")
+    Optional<Server> findByIdForUpdate(@Param("id") UUID id);
+
+    long countByOwnerId(UUID ownerId);
 }

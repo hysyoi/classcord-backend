@@ -80,6 +80,7 @@ public class SecurityConfig {
                         auth ->
                                 auth
                                         // swagger
+                                        // todo 上線時記得在 yml 關掉，也可考慮限制 IP
                                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**")
                                         .permitAll()
                                         .requestMatchers("/v1/auth/**")

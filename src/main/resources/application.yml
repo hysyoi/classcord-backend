@@ -6,12 +6,13 @@ spring:
     active: local
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/classcord
+    url: jdbc:postgresql://localhost:5432/classcord?reWriteBatchedInserts=true
     driver-class-name: org.postgresql.Driver
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
   jpa:
+    open-in-view: false # 關閉 Open Session in View，防止資料庫連線洩漏與隱蔽的 N+1
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: none
@@ -19,6 +20,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        jdbc:
+          batch_size: 20
+        order_updates: true
+        order_inserts: true # 由於使用 UUID v7，也能享受批次 INSERT 的效能優化
 
   data:
     redis:

@@ -12,11 +12,14 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+// todo API Gateway <- IP 交由這個防禦
+// todo 這個 RateLimitFilter 可以改成針對同一個帳號 (Email)＋IP 做限制，可能還是 CAPTCHA 最好
 /** 註冊與登入請求限制 (Redis 分散式限流) */
 @Component
 @RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
 
+    // todo 硬編碼
     private static final int MAX_ATTEMPTS = 30; // 最大嘗試次數
     private static final int EXPIRE_SECONDS = 60; // 限制時間（秒）
 
