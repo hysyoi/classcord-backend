@@ -10,7 +10,7 @@ jobs:
     permissions:
       issues: write
       pull-requests: write
-      contents: parse
+      contents: read
     steps:
       - name: Run PR Agent
         uses: Codium-ai/pr-agent@main
