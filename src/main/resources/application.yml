@@ -11,6 +11,10 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+  threads:
+    virtual:
+      enabled: true # 開啟 Spring Boot 的虛擬執行緒支持
+
   jpa:
     open-in-view: false # 關閉 Open Session in View，防止資料庫連線洩漏與隱蔽的 N+1
     database-platform: org.hibernate.dialect.PostgreSQLDialect
@@ -37,3 +41,5 @@ app:
   urls:
     backend: http://localhost:8080
     frontend: http://localhost:3000
+  mail:
+    from-email: noreply@email.com

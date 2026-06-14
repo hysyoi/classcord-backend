@@ -45,7 +45,11 @@ public class OAuth2AuthService {
         // 1. 根據平台動態取得對應的驗證策略
         OAuth2Strategy strategy =
                 Optional.ofNullable(strategies.get(provider))
-                        .orElseThrow(() -> new IllegalArgumentException("未支援的第三方平台: " + provider));
+                        .orElseThrow(
+                                () ->
+                                        new AuthException(
+                                                AuthErrorCode.UNSUPPORTED_PROVIDER,
+                                                "未支援的第三方平台: " + provider));
 
         // 2. 驗證並拿到統一格式的用戶資料
         OAuthUserInfoDto userInfo = strategy.verifyAndExtractInfo(token);

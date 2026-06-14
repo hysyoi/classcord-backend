@@ -1,18 +1,23 @@
 package com.hys.classcord.auth.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import javax.crypto.SecretKey;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 // todo 考慮雙token
 /** JWT處理器 */
+@Slf4j
 @Component
 public class JwtUtils {
 
@@ -50,20 +55,34 @@ public class JwtUtils {
                             .parseSignedClaims(token) // 檢查簽名是否被篡改，並解開密文
                             .getPayload(); // 拿到裡面的資料包 (Claims)
             return claims.getSubject(); // 取出 sub 裡面的 User UUID 字串
+        } catch (ExpiredJwtException e) {
+            log.debug(
+                    "JWT Token 已過期: {}", e.getMessage()); // 過期是常態，用 debug 記錄即可，避免塞滿 production 正常日誌
+            return null;
+        } catch (SignatureException e) {
+            log.warn("偵測到無效的 JWT 簽章，Token 可能被竄改！原因: {}", e.getMessage()); // 竄改是安全事件，用 warn
+            // 可能可以實作封鎖 IP 等等
+            return null;
+        } catch (MalformedJwtException e) {
+            log.warn("偵測到格式錯誤的 JWT Token！原因: {}", e.getMessage()); // 格式錯誤也可能是探測，用 warn
+            // 可能可以實作封鎖 IP 等等
+            return null;
         } catch (Exception e) {
+            log.error("JWT 解析時發生未預期異常: ", e); // 其他未預期異常，用 error
             return null;
         }
     }
 
-    /** 驗證 Token 是否合法與過期 */
-    public boolean validateToken(String token) {
-        try {
-            Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
+    //
+    // /** 驗證 Token 是否合法與過期 */
+    // public boolean validateToken(String token) {
+    //     try {
+    //         Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
+    //         return true;
+    //     } catch (Exception e) {
+    //         return false;
+    //     }
+    // }
 
     //  登出支援方法
 

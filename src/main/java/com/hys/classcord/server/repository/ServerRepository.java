@@ -16,7 +16,9 @@ import org.springframework.stereotype.Repository;
 public interface ServerRepository extends JpaRepository<Server, UUID> {
     // 在查詢伺服器時，立刻對該行數據加上排他鎖（Pessimistic Write Lock）
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints({@QueryHint(name = "javax.persistence.lock.timeout", value = "2000")}) // 限制最多等 2 秒
+    @QueryHints({
+        @QueryHint(name = "jakarta.persistence.lock.timeout", value = "2000")
+    }) // 限制最多等 2 秒
     @Query("SELECT s FROM Server s WHERE s.id = :id")
     Optional<Server> findByIdForUpdate(@Param("id") UUID id);
 

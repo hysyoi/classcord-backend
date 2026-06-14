@@ -17,7 +17,8 @@ public enum AuthErrorCode {
 
     OAUTH_PROVIDER_ERROR("AUTH_006", HttpStatus.BAD_GATEWAY, "第三方認證服務連線異常"),
     OAUTH_EMAIL_NOT_FOUND("AUTH_007", HttpStatus.BAD_REQUEST, "無法取得該第三方帳號的 Email 資訊"),
-    OAUTH_EMAIL_UNVERIFIED("AUTH_008", HttpStatus.FORBIDDEN, "該第三方帳號的 Email 未通過驗證，拒絕登入");
+    OAUTH_EMAIL_UNVERIFIED("AUTH_008", HttpStatus.FORBIDDEN, "該第三方帳號的 Email 未通過驗證，拒絕登入"),
+    UNSUPPORTED_PROVIDER("AUTH_009", HttpStatus.BAD_REQUEST, "未支援的第三方登入平台");
 
     private final String code; // 給前端或記 Log 用的自訂業務碼
     private final HttpStatus status;

@@ -38,7 +38,6 @@ public class AuthenticationService {
     private final AppUrlProperties appUrlProperties; // 連結
 
     /** 一般帳密註冊（暫存 Redis 階段，不寫入 DB） */
-    @Transactional // 雖然這步沒寫庫，但維持一致性
     public void registerPending(String username, String email, String rawPassword) {
         // 一律轉成小寫並去空白
         String normalizedEmail = email.toLowerCase().trim();
@@ -166,7 +165,7 @@ public class AuthenticationService {
             throw new AuthException(AuthErrorCode.TOO_MANY_REQUESTS);
         }
 
-        // 🟢 【第二道防線：檢查真偽】只有真正註冊過的使用者才能重設密碼
+        // 【第二道防線：檢查真偽】只有真正註冊過的使用者才能重設密碼
         User user =
                 userRepository
                         .findByEmail(normalizedEmail)
@@ -314,7 +313,7 @@ public class AuthenticationService {
             // 傳入算好的過期時間，時間到了 Redis 會自動在記憶體裡把它銷毀
             redisTemplate
                     .opsForValue()
-                    .set(redisKey, "revoked", remainingSeconds, TimeUnit.SECONDS);
+                    .setIfAbsent(redisKey, "revoked", remainingSeconds, TimeUnit.SECONDS);
         }
     }
 }

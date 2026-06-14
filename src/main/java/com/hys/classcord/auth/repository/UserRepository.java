@@ -22,7 +22,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     // 在建立或加入伺服器時，鎖定該使用者以防止 Race Condition
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints({@QueryHint(name = "javax.persistence.lock.timeout", value = "2000")}) // 限制最多等 2 秒
+    @QueryHints({
+        @QueryHint(name = "jakarta.persistence.lock.timeout", value = "2000")
+    }) // 限制最多等 2 秒
     @Query("SELECT u FROM User u WHERE u.id = :id")
     Optional<User> findByIdForUpdate(@Param("id") UUID id);
 }

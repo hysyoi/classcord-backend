@@ -58,9 +58,9 @@ public class AuthenticationController {
     /** 忘記密碼階段一：輸入信箱，發送重設憑證 */
     @PostMapping("/forgot-password")
     @Operation(summary = "忘記密碼 (發送重設連結)", description = "輸入註冊信箱，若帳號存在則在主控台印出限時 15 分鐘的密碼重設連結。")
-    public ResponseEntity<Void> forgotPassword(@RequestParam String email) {
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         // 呼叫忘記密碼第一階段：校驗並產生 15 分鐘憑證
-        authenticationService.sendResetPasswordLink(email);
+        authenticationService.sendResetPasswordLink(request.email());
         return ResponseEntity.accepted().build();
     }
 

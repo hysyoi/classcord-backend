@@ -66,6 +66,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
+    // todo Nginx配置real_ip
     /** 在生產環境中取得使用者真正的IP，而非代理伺服器的 */
     private String getClientIp(HttpServletRequest request) {
 

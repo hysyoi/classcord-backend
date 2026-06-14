@@ -1,9 +1,9 @@
 package com.hys.classcord.auth.service;
 
-import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
@@ -13,15 +13,22 @@ import org.thymeleaf.context.Context;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MailService {
 
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine; // 注入 Thymeleaf 模板引擎
+    private final String fromEmail;
 
-    private final String fromEmail = "noreply@classcord.hys-lab.com";
+    public MailService(
+            JavaMailSender mailSender,
+            TemplateEngine templateEngine,
+            @Value("${app.mail.from-email}") String fromEmail) {
+        this.mailSender = mailSender;
+        this.templateEngine = templateEngine;
+        this.fromEmail = fromEmail;
+    }
 
-    /** 🚀 業界標準：傳入參數，動態渲染 HTML 模板並寄出 */
+    /** 業界標準：傳入參數，動態渲染 HTML 模板並寄出 */
     @Async
     public void sendAuthMail(
             String to,
@@ -57,8 +64,17 @@ public class MailService {
             mailSender.send(message);
             log.info("📧 [MailService] 成功透過 Thymeleaf 模板非同步發送郵件至: {}", to);
 
-        } catch (MessagingException e) {
-            throw new RuntimeException("郵件發送異常", e);
+        } catch (Exception e) {
+            // 1. 記錄詳細的錯誤日誌，以便運維與 Debug
+            log.error(
+                    "📧 [MailService] 郵件發送失敗。收件人: {}, 主題: {}, 錯誤原因: {}",
+                    to,
+                    subject,
+                    e.getMessage(),
+                    e);
+
+            // 2. 如果不需要讓外部的 AsyncConfigurer 再次處理，就不要拋出異常；
+            throw new MailSendException("發送驗證郵件至 " + to + " 失敗", e);
         }
     }
 }

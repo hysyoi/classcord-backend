@@ -1,5 +1,6 @@
 package com.hys.classcord.channel.controller;
 
+import com.hys.classcord.channel.dto.ChannelPositionDto;
 import com.hys.classcord.channel.dto.ChannelResponse;
 import com.hys.classcord.channel.dto.CreateChannelRequest;
 import com.hys.classcord.channel.dto.UpdateChannelRequest;
@@ -52,6 +53,16 @@ public class ChannelController {
             @Valid @RequestBody UpdateChannelRequest request) {
         Channel channel = channelService.updateChannel(userId, channelId, request);
         return ResponseEntity.ok(ChannelResponse.fromEntity(channel));
+    }
+
+    @PutMapping("/servers/{serverId}/channels/positions")
+    @Operation(summary = "批量修改頻道排序", description = "修改指定伺服器內頻道的排序位置（限 Teacher/TA 權限）")
+    public ResponseEntity<Void> updateChannelPositions(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID serverId,
+            @Valid @RequestBody List<ChannelPositionDto> request) {
+        channelService.updateChannelPositions(userId, serverId, request);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/channels/{channelId}")

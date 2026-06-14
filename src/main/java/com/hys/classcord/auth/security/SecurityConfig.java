@@ -4,6 +4,7 @@ import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import java.security.SecureRandom;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -28,6 +29,11 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(); // 加鹽雜湊工具
+    }
+
+    @Bean
+    public SecureRandom secureRandom() {
+        return new SecureRandom(); // SecureRandom (安全隨機數產生器)
     }
 
     // 停用 JwtAuthenticationFilter 的自動雙重註冊
@@ -88,9 +94,10 @@ public class SecurityConfig {
                                         .anyRequest()
                                         .authenticated());
 
-        // 將 RateLimitFilter 放在最前面（或者 JwtAuthenticationFilter 之前）
+        // 1. 將 rateLimitFilter 放在 UsernamePasswordAuthenticationFilter 之前 (權重較低，先執行)
         http.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class);
-        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        // 2. 將 jwtAuthenticationFilter 放在 UsernamePasswordAuthenticationFilter 的位置 (權重較高，後執行)
+        http.addFilterAt(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
