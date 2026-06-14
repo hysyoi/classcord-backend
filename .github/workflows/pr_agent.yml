@@ -1,0 +1,30 @@
+name: Qodo PR-Agent Reviewer
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  pr_agent_job:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: parse
+    steps:
+      - name: Run PR Agent
+        uses: Codium-ai/pr-agent@main
+        env:
+          # 1. 核心
+          MODEL_PROVIDER: "google"
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+          # 2. 模型指定
+          DEPLOYMENT_NAME: "gemini-3.5-flash"
+
+          # 3. 自動化觸發行為
+          PR_DESCRIPTION.AUTO_DESCRIPTION: "true"
+          PR_REVIEWS.AUTO_REVIEW: "true"
+
+          # 讓 Action 知道要去讀取 .pr_agent.toml 設定檔
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
