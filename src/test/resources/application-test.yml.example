@@ -1,9 +1,13 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/classcord
+    url: jdbc:postgresql://localhost:5432/classcord_test
     driver-class-name: org.postgresql.Driver
     username: admin
     password: password
+
+  jpa:
+      hibernate:
+        ddl-auto: create-drop
 
   # 2. Redis 連線資訊
   data:
