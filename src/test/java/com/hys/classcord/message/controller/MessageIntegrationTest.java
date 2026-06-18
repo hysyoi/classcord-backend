@@ -212,8 +212,11 @@ public class MessageIntegrationTest {
                                 .content(objectMapper.writeValueAsString(updateReq)))
                 .andExpect(status().isOk());
 
-        assertEquals(
-                "Hello Class! (edited)", messageRepository.findById(messageId).get().getContent());
+        Message updatedMessage =
+                messageRepository
+                        .findById(messageId)
+                        .orElseThrow(() -> new AssertionError("找不到訊息"));
+        assertEquals("Hello Class! (edited)", updatedMessage.getContent());
 
         // 3.2 老師編輯學生的訊息 ➔ 失敗 (403 Forbidden - 老師無權修改他人發言內容)
         mockMvc.perform(
