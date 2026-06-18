@@ -19,7 +19,7 @@ spring:
     open-in-view: false # 關閉 Open Session in View，防止資料庫連線洩漏與隱蔽的 N+1
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
