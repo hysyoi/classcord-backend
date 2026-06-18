@@ -1,0 +1,20 @@
+#!/bin/sh
+
+echo "[Git Hook] 準備推送代碼，開始執行本地自動化測試..."
+
+# 執行 Maven 測試
+./mvnw test
+
+# 獲取測試的退出狀態碼 (0 代表成功，非 0 代表失敗)
+RESULT=$?
+
+if [ $RESULT -ne 0 ]; then
+    echo "[Git Hook] 測試失敗！拒絕 Push。請修正 Bug 後再推送。"
+    exit 1
+fi
+
+echo "[Git Hook] 測試全數通過！開始推送至遠端倉庫..."
+exit 0
+
+# 要使用指令讓本地的 Git 能夠讀取：
+# git config core.hooksPath .githooks
