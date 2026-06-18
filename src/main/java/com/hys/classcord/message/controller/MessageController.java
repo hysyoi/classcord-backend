@@ -47,6 +47,7 @@ public class MessageController {
     }
 
     @PutMapping("/messages/{messageId}")
+    @Operation(summary = "編輯訊息內容", description = "修改自己發送的訊息內容（限原作者）")
     public ResponseEntity<Void> updateMessage(
             @AuthenticationPrincipal UUID userId,
             @PathVariable UUID messageId,
