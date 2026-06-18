@@ -1,0 +1,33 @@
+name: AI PR Agent Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  pr_agent_job:
+    if: github.event.issue.pull_request != null && github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+      # 步驟 1：使用 GitHub App 產生暫時性的 Token
+      - name: Generate GitHub App Token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      # 步驟 2：執行 PR Agent，並使用該 App Token
+      - name: Run PR Agent
+        uses: Codium-ai/pr-agent@main
+        env:
+          # 使用 App 產生的 Token 代替預設的 GITHUB_TOKEN
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+
+          # Google AI Studio (Gemini) 驗證
+          GOOGLE_AI_STUDIO__GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CONFIG__MODEL: "gemini/gemini-3.5-flash"

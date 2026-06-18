@@ -1,4 +1,4 @@
-name: Java Spring Boot CI & PR Review
+name: Java Spring Boot CI
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   # ==========================================
-  # 任務一：編譯、排版檢查與資料庫測試 (CI)
+  # 任務：編譯、排版檢查與資料庫測試 (CI)
   # ==========================================
   test-and-build:
     runs-on: ubuntu-latest
@@ -15,11 +15,11 @@ jobs:
     steps:
       # 步驟 1：下載程式碼
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # 步驟 2：設定 Java 21 與 Maven 快取
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -29,50 +29,21 @@ jobs:
       - name: Copy Test Configuration
         run: cp src/test/resources/application-test.yml.example src/test/resources/application-test.yml
 
-      # 步驟 4：只啟動資料庫與 Redis 容器（省去 pgadmin，節省虛擬機記憶體）
+      # 步驟 4：啟動資料庫與 Redis 容器
       - name: Start Databases via Docker Compose
         env:
           DB_USERNAME: admin
           DB_PASSWORD: password
-        run: docker compose up -d postgres redis
+        run: docker compose up -d --wait postgres redis
 
       # 步驟 5：檢查程式碼格式是否符合規範 (Spotless)
       - name: Check code formatting
         run: ./mvnw spotless:check
 
-      # 步驟 6：編譯專案並執行測試（此時會動態在 classcord_test 中建表並跑測試）
+      # 步驟 6：編譯專案並執行測試
       - name: Build and Run Tests
         run: ./mvnw clean verify
 
       # 步驟 7：測試結束，關閉並清理容器
-      - name: Stop Databases
-        run: docker compose down
-
-  # ==========================================
-  # 任務二：AI Code Review (PR-Agent)
-  # ==========================================
-  pr_agent_job:
-    # 設定依賴關係，只有上面的 test-and-build 綠燈成功時，才會執行此任務
-    needs: test-and-build
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: read
-    steps:
-      - name: Run PR Agent
-        uses: Codium-ai/pr-agent@main
-        env:
-          # 1. 核心
-          MODEL_PROVIDER: "google"
-          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-          # 2. 模型指定
-          DEPLOYMENT_NAME: "gemini-3.5-flash"
-
-          # 3. 自動化觸發行為
-          PR_DESCRIPTION.AUTO_DESCRIPTION: "true"
-          PR_REVIEWS.AUTO_REVIEW: "true"
-
-          # 讓 Action 知道要去讀取 .pr_agent.toml 設定檔
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#      - name: Stop Databases
+#        run: docker compose down
