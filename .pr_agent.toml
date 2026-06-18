@@ -1,6 +1,6 @@
 [config]
 # 強制要求機器人完全使用繁體中文回覆
-output_language = "zh-TW"
+response_language = "zh-TW"
 
 [pr_review]
 # 開啟嚴格模式，讓 AI 針對不符合業界標準的地方加大力度審查
