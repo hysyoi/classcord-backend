@@ -16,7 +16,6 @@ import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.Hibernate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -101,9 +100,9 @@ public class MessageService {
         return messageRepository.findByChannelId(channelId, pageable);
     }
 
-    /** 修改訊息內容 (回傳 Message Entity) */
+    /** 修改訊息內容 */
     @Transactional
-    public Message updateMessage(UUID userId, UUID messageId, UpdateMessageRequest request) {
+    public void updateMessage(UUID userId, UUID messageId, UpdateMessageRequest request) {
         // 1. 確認訊息存在
         Message message =
                 messageRepository
@@ -111,18 +110,13 @@ public class MessageService {
                         .orElseThrow(
                                 () -> new MessageException(MessageErrorCode.MESSAGE_NOT_FOUND));
 
-        // 2. 權限檢查：只有原發送者可以編輯自己的訊息
+        // 2. 權限檢查
         if (!userId.equals(message.getUser().getId())) {
             throw new MessageException(MessageErrorCode.INSUFFICIENT_PERMISSIONS, "您僅能修改自己發送的訊息");
         }
 
         // 3. 修改內容
         message.setContent(request.content());
-
-        // 交易結束前載入 User 實體
-        Hibernate.initialize(message.getUser());
-
-        return message;
     }
 
     /** 刪除訊息 */

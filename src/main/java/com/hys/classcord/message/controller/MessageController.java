@@ -47,13 +47,14 @@ public class MessageController {
     }
 
     @PutMapping("/messages/{messageId}")
-    @Operation(summary = "編輯訊息內容", description = "修改自己發送的訊息內容（限原作者）")
-    public ResponseEntity<MessageResponse> updateMessage(
+    public ResponseEntity<Void> updateMessage(
             @AuthenticationPrincipal UUID userId,
             @PathVariable UUID messageId,
             @Valid @RequestBody UpdateMessageRequest request) {
-        Message message = messageService.updateMessage(userId, messageId, request);
-        return ResponseEntity.ok(MessageResponse.fromEntity(message));
+
+        messageService.updateMessage(userId, messageId, request);
+
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/messages/{messageId}")

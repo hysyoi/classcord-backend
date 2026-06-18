@@ -203,14 +203,14 @@ public class MessageIntegrationTest {
         // 3. 編輯訊息測試
         // ==========================================
 
-        // 3.1 學生編輯自己的訊息 ➔ 成功 (200 OK)
+        // 3.1 學生編輯自己的訊息 ➔ 成功 (204 No Content)
         UpdateMessageRequest updateReq = new UpdateMessageRequest("Hello Class! (edited)");
         mockMvc.perform(
                         put("/v1/messages/" + messageId)
                                 .header("Authorization", studentToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(updateReq)))
-                .andExpect(status().isOk());
+                .andExpect(status().isNoContent());
 
         Message updatedMessage =
                 messageRepository
