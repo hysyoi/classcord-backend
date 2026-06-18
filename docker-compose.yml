@@ -12,7 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./src/main/resources/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./src/test/resources/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 
   # 2. pgAdmin 4 圖形化管理工具
   pgadmin:
