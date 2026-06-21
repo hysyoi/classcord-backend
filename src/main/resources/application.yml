@@ -43,3 +43,13 @@ app:
     frontend: http://localhost:3000
   mail:
     from-email: noreply@email.com
+  # 儲存相關設定
+  storage:
+    endpoint: ${S3_ENDPOINT}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+    bucket-name: ${S3_BUCKET_NAME}
+    public-url: ${S3_PUBLIC_URL}
+    # 限制額度 (單位：Bytes)
+    system-quota: 9126805504   # 8.5 GB
+    server-quota: 524288000    # 500 MB

@@ -44,3 +44,13 @@ app:
   urls:
     backend: http://localhost:8080
     frontend: http://localhost:3000
+  mail:
+    from-email: noreply@email.com
+  storage:
+    endpoint: https://mock-s3-endpoint.com
+    access-key: mock-access-key
+    secret-key: mock-secret-key
+    bucket-name: mock-bucket
+    public-url: https://mock-public-url.com
+    system-quota: 9126805504   # 8.5 GB
+    server-quota: 524288000    # 500 MB

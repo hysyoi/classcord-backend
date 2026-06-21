@@ -36,6 +36,8 @@ public class ServerService {
     // 每人最大加入班級數
     private static final int MAX_JOINED_SERVERS = 20;
 
+    // todo 班級最大人數
+
     /** 建立伺服器（班級），同時將建立者設定為 TEACHER 角色 */
     @Transactional
     public Server createServer(UUID userId, CreateServerRequest request) {

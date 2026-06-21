@@ -46,6 +46,7 @@ public class AuthenticationIntegrationTest {
     // 用 MockBean 擋掉郵件發送，避免測試時真的連線 Mailpit 或外部伺服器
     @MockBean private MailService mailService;
 
+    // todo 測試環境的redis處理機制
     @BeforeEach
     void setUp() {
         // 每次測試前清空 Redis 中的相關測試 Key，避免干擾

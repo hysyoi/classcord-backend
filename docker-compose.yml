@@ -50,6 +50,19 @@ services:
       timeout: 3s
       retries: 5
 
+  # 4. Redis 測試服務
+  redis-test:
+    image: redis:7.2-alpine
+    container_name: classcord_redis_test
+    restart: always
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+
 volumes:
   pgdata:
   redisdata:
