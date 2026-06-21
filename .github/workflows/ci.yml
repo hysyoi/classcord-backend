@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [ main ] # 限制只有發送 PR 到 main 分支時才觸發
     types: [opened, reopened, synchronize]
+  workflow_dispatch: # 允許在 GitHub 網頁介面手動點擊 Run workflow
 
 jobs:
   # ==========================================
