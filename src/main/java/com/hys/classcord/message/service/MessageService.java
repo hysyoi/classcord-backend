@@ -18,6 +18,7 @@ import com.hys.classcord.server.entity.Server;
 import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
+import com.hys.classcord.server.repository.ServerRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class MessageService {
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
     private final ServerMemberRepository serverMemberRepository;
+    private final ServerRepository serverRepository;
 
     private final MaterialRepository materialRepository;
     private final ObjectStorageService storageService;
@@ -133,7 +135,7 @@ public class MessageService {
         message.setContent(request.content());
     }
 
-    /** 刪除訊息 */
+    /** 刪除訊息 (若有教材、一併刪除) */
     @Transactional
     public void deleteMessage(UUID userId, UUID messageId) {
         // 1. 確認訊息存在
@@ -187,8 +189,17 @@ public class MessageService {
                                         .opsForValue()
                                         .decrement("QUOTA:SYSTEM:USED", material.getFileSize());
 
-                                // 2. 扣減班級容量 (資料庫欄位，防止扣成負數用 Math.max)
-                                Server server = message.getChannel().getServer();
+                                // 2. 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
+                                Server server =
+                                        serverRepository
+                                                .findByIdForUpdate(
+                                                        message.getChannel().getServer().getId())
+                                                .orElseThrow(
+                                                        () ->
+                                                                new MessageException(
+                                                                        MessageErrorCode
+                                                                                .CHANNEL_NOT_FOUND,
+                                                                        "找不到該伺服器"));
                                 server.setUsedStorage(
                                         Math.max(
                                                 0L,

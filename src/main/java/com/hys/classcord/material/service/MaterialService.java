@@ -18,6 +18,7 @@ import com.hys.classcord.server.entity.Server;
 import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
+import com.hys.classcord.server.repository.ServerRepository;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +50,7 @@ public class MaterialService {
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
     private final ReentrantLock quotaInitLock = new ReentrantLock();
+    private final ServerRepository serverRepository;
 
     private static final int MAX_UPLOAD_ATTEMPTS = 10;
     private static final int UPLOAD_LIMIT_EXPIRE_SECONDS = 3600; // 1小時
@@ -189,8 +191,21 @@ public class MaterialService {
         // 5. 更新全站計數器 (Redis 累加)
         redisTemplate.opsForValue().increment("QUOTA:SYSTEM:USED", fileSize);
 
-        // 6. 更新班級已用容量 (資料庫欄位累加，JPA 會在 commit 時自動 UPDATE)
-        Server server = channel.getServer();
+        // 6. 更新班級已用容量 (使用悲觀鎖防止高併發 Lost Update)
+        Server server =
+                serverRepository
+                        .findByIdForUpdate(UUID.fromString(ticketServerId))
+                        .orElseThrow(
+                                () ->
+                                        new MaterialException(
+                                                MaterialErrorCode.INSUFFICIENT_PERMISSIONS,
+                                                "找不到該伺服器"));
+
+        // 雙重校驗容量限制，防止在申請 URL 到確認發布期間被其他併發上傳塞滿
+        if (server.getUsedStorage() + fileSize > properties.getServerQuota()) {
+            throw new MaterialException(
+                    MaterialErrorCode.SERVER_STORAGE_LIMIT_EXCEEDED, "班級教材儲存空間已滿");
+        }
         server.setUsedStorage(server.getUsedStorage() + fileSize);
 
         // 7. 手動清除 Redis 憑證，結束
@@ -262,8 +277,15 @@ public class MaterialService {
         // 1. 扣減全站計數器 (Redis)
         redisTemplate.opsForValue().decrement("QUOTA:SYSTEM:USED", material.getFileSize());
 
-        // 2. 扣減班級容量 (資料庫欄位，防止扣成負數用 Math.max)
-        Server server = message.getChannel().getServer();
+        // 2. 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
+        Server server =
+                serverRepository
+                        .findByIdForUpdate(serverId)
+                        .orElseThrow(
+                                () ->
+                                        new MaterialException(
+                                                MaterialErrorCode.INSUFFICIENT_PERMISSIONS,
+                                                "找不到該伺服器"));
         server.setUsedStorage(Math.max(0L, server.getUsedStorage() - material.getFileSize()));
 
         // 3. 手動物理刪除教材記錄
