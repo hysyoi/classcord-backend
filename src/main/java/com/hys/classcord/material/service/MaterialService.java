@@ -22,6 +22,7 @@ import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -33,10 +34,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import software.amazon.awssdk.services.s3.S3Client;
 
 // todo 自訂網站前綴
 // todo 高併發問題
+// todo 可考慮@TransactionalEventListener
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
@@ -127,18 +131,26 @@ public class MaterialService {
     /** 初始化全站已用容量計數器 (雙重檢查鎖，高併發擊穿) */
     private void initSystemQuotaCounterIfAbsent() {
         if (Boolean.FALSE.equals(redisTemplate.hasKey("QUOTA:SYSTEM:USED"))) {
-            quotaInitLock.lock();
-            try {
-                // 第二層檢查 (Double Check)
-                if (Boolean.FALSE.equals(redisTemplate.hasKey("QUOTA:SYSTEM:USED"))) {
-                    long usedSystem = materialRepository.sumAllFileSizes();
+            // 1. 嘗試搶全域分散式鎖（設定 5 秒過期時間，防止程式死機造成死鎖）
+            Boolean acquired =
                     redisTemplate
                             .opsForValue()
-                            .set("QUOTA:SYSTEM:USED", String.valueOf(usedSystem));
-                    log.info("全站已用容量計數器初始化成功: {} Bytes", usedSystem);
+                            .setIfAbsent("LOCK:SYSTEM:QUOTA", "LOCKED", Duration.ofSeconds(5));
+
+            if (Boolean.TRUE.equals(acquired)) {
+                try {
+                    // 2. 第二層檢查 (Double Check)
+                    if (Boolean.FALSE.equals(redisTemplate.hasKey("QUOTA:SYSTEM:USED"))) {
+                        long usedSystem = materialRepository.sumAllFileSizes();
+                        redisTemplate
+                                .opsForValue()
+                                .set("QUOTA:SYSTEM:USED", String.valueOf(usedSystem));
+                        log.info("全站已用容量計數器初始化成功: {} Bytes", usedSystem);
+                    }
+                } finally {
+                    // 3. 在 finally 釋放鎖，讓給別人
+                    redisTemplate.delete("LOCK:SYSTEM:QUOTA");
                 }
-            } finally {
-                quotaInitLock.unlock();
             }
         }
     }
@@ -209,20 +221,28 @@ public class MaterialService {
                         .build();
         Material savedMaterial = materialRepository.save(material);
 
-        // 更新全站計數器 (Redis 累加)
-        redisTemplate.opsForValue().increment("QUOTA:SYSTEM:USED", fileSize);
-
         // 更新班級已用容量
         server.setUsedStorage(server.getUsedStorage() + fileSize);
 
-        // 手動清除 Redis 憑證
-        redisTemplate.delete(ticketKey);
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        // 只有資料庫 Commit 成功後，這裡才會被觸發！
 
-        // 4. 發送非同步搬移訊息給 RabbitMQ
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.MATERIAL_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_MOVE,
-                new MaterialMoveEvent(request.fileKey(), newFileKey));
+                        // 更新全站計數器 (Redis 累加)
+                        redisTemplate.opsForValue().increment("QUOTA:SYSTEM:USED", fileSize);
+
+                        // 手動清除 Redis 憑證
+                        redisTemplate.delete(ticketKey);
+
+                        // 4. 發送非同步搬移訊息給 RabbitMQ
+                        rabbitTemplate.convertAndSend(
+                                RabbitMQConfig.MATERIAL_EXCHANGE,
+                                RabbitMQConfig.ROUTING_KEY_MOVE,
+                                new MaterialMoveEvent(request.fileKey(), newFileKey));
+                    }
+                });
 
         return savedMaterial;
     }
@@ -281,10 +301,7 @@ public class MaterialService {
             throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS);
         }
 
-        // 1. 扣減全站計數器 (Redis)
-        redisTemplate.opsForValue().decrement("QUOTA:SYSTEM:USED", material.getFileSize());
-
-        // 2. 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
+        // 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
         Server server =
                 serverRepository
                         .findByIdForUpdate(serverId)
@@ -295,18 +312,31 @@ public class MaterialService {
                                                 "找不到該伺服器"));
         server.setUsedStorage(Math.max(0L, server.getUsedStorage() - material.getFileSize()));
 
-        // 3. 手動物理刪除教材記錄
+        // 手動物理刪除教材記錄
         materialRepository.delete(material);
 
-        // 4. 軟刪除訊息貼文
+        // 軟刪除訊息貼文
         messageRepository.delete(message);
 
-        // 5. 發送非同步刪除訊息給 RabbitMQ (解耦 B2 網路刪除)
-        String fileKey = storageService.extractFileKey(material.getFileUrl());
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.MATERIAL_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_DELETE,
-                new MaterialDeleteEvent(fileKey));
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        // 只有資料庫 Commit 成功後，這裡才會被觸發！
+
+                        // 扣減全站計數器 (Redis)
+                        redisTemplate
+                                .opsForValue()
+                                .decrement("QUOTA:SYSTEM:USED", material.getFileSize());
+
+                        // 發送非同步刪除訊息給 RabbitMQ (解耦 B2 網路刪除)
+                        String fileKey = storageService.extractFileKey(material.getFileUrl());
+                        rabbitTemplate.convertAndSend(
+                                RabbitMQConfig.MATERIAL_EXCHANGE,
+                                RabbitMQConfig.ROUTING_KEY_DELETE,
+                                new MaterialDeleteEvent(fileKey));
+                    }
+                });
     }
 
     /* 私有輔助方法 */

@@ -48,6 +48,13 @@ spring:
           multiplier: 2.0         # 每次重試加倍等待 (1s -> 2s -> 4s)
           max-interval: 5000ms    # 最長等待 5 秒
 
+logging:
+  level:
+    root: INFO
+    com.hys.classcord: DEBUG
+    org.hibernate.SQL: DEBUG  # 在主控台顯示 SQL 語法
+    org.hibernate.orm.jdbc.bind: TRACE # 顯示 SQL 傳入的真實變數數值
+
 app:
   jwt: # 可能也可以抽成一個properties類
     secret-key: ${JWT_SECRET_KEY}
