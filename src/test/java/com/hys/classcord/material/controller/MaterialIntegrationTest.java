@@ -1,20 +1,22 @@
 package com.hys.classcord.material.controller;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hys.classcord.BaseIntegrationTest;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
 import com.hys.classcord.channel.entity.Channel;
 import com.hys.classcord.channel.enums.ChannelType;
 import com.hys.classcord.channel.repository.ChannelRepository;
+import com.hys.classcord.core.config.RabbitMQConfig;
 import com.hys.classcord.material.dto.CreateMaterialRequest;
 import com.hys.classcord.material.dto.UploadUrlResponse;
+import com.hys.classcord.material.event.MaterialDeleteEvent;
 import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.message.repository.MessageRepository;
 import com.hys.classcord.server.entity.Server;
@@ -28,29 +30,22 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
-import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-@SpringBootTest
-@ActiveProfiles("test")
-@AutoConfigureMockMvc
-@Transactional
-public class MaterialIntegrationTest {
+public class MaterialIntegrationTest extends BaseIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JwtUtils jwtUtils;
@@ -63,9 +58,7 @@ public class MaterialIntegrationTest {
     @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
-
-    @MockBean private S3Client s3Client;
-    @MockBean private S3Presigner s3Presigner;
+    @Autowired private RabbitTemplate rabbitTemplate;
 
     private User teacher;
     private User student;
@@ -154,6 +147,14 @@ public class MaterialIntegrationTest {
                                 .toURL());
         when(s3Presigner.presignGetObject(any(GetObjectPresignRequest.class)))
                 .thenReturn(mockPresignedGet);
+
+        // 5. Mock S3Client 的 copyObject 與 deleteObject 行為，避免 AWS SDK 執行真實網路連線
+        when(s3Client.copyObject(any(CopyObjectRequest.class)))
+                .thenReturn(CopyObjectResponse.builder().build());
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                .thenReturn(DeleteObjectResponse.builder().build());
+        when(s3Client.deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any()))
+                .thenReturn(DeleteObjectResponse.builder().build());
     }
 
     @Test
@@ -269,8 +270,8 @@ public class MaterialIntegrationTest {
         assertFalse(messageRepository.existsById(messageId));
         assertFalse(materialRepository.existsById(materialId));
 
-        // 驗證 B: S3 刪除方法有被調用
-        verify(s3Client, times(1))
+        // 驗證 B: S3 刪除方法有被調用 (非同步等待 RabbitMQ Consumer 執行)
+        verify(s3Client, timeout(3000).atLeastOnce())
                 .deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any());
 
         // 驗證 C: 透過 Native SQL 檢查軟刪除在 DB 層面確實將 messages.deleted 設為 true
@@ -300,5 +301,33 @@ public class MaterialIntegrationTest {
                                 .param("fileSize", String.valueOf(hugeSize)))
                 .andExpect(
                         status().isPayloadTooLarge()); // 應拋出自訂例外，最後被全域 Exception Handler 攔截返回 413
+    }
+
+    @Test
+    void testDeadLetterQueueOnFailure() throws Exception {
+        // 0. 清空死信佇列中先前的殘留訊息
+        while (rabbitTemplate.receiveAndConvert(RabbitMQConfig.DELETE_DLQ) != null) {}
+
+        // 1. 模擬 S3 物理刪除時發生嚴重故障拋出例外
+        doThrow(new RuntimeException("模擬 B2 雲端機房大當機！"))
+                .when(s3Client)
+                .deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any());
+
+        // 2. 發送刪除任務給 RabbitMQ
+        String failedFileKey = "materials/test-server/failed-file.pdf";
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.MATERIAL_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_DELETE,
+                new MaterialDeleteEvent(failedFileKey));
+
+        // 3. 從死信佇列 (DLQ) 中非同步拉取訊息 (給予重試時間最長 8 秒)
+        // 因為重試設定為 1s -> 2s -> 4s，三次重試失敗後訊息會被轉移至 DLQ
+        MaterialDeleteEvent dlqEvent =
+                (MaterialDeleteEvent)
+                        rabbitTemplate.receiveAndConvert(RabbitMQConfig.DELETE_DLQ, 8000);
+
+        // 4. 驗證死信佇列中確實保存了該筆失敗的任務訊息
+        assertNotNull(dlqEvent, "死信佇列中應該要收到重試失敗的任務訊息");
+        assertEquals(failedFileKey, dlqEvent.fileKey(), "死信佇列中的檔案 Key 應一致");
     }
 }

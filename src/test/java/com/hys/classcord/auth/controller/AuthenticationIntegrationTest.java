@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hys.classcord.BaseIntegrationTest;
 import com.hys.classcord.auth.dto.PendingUserDto;
 import com.hys.classcord.auth.dto.RegisterRequest;
 import com.hys.classcord.auth.entity.User;
@@ -13,25 +14,15 @@ import com.hys.classcord.auth.entity.UserIdentity;
 import com.hys.classcord.auth.enums.AuthProvider;
 import com.hys.classcord.auth.repository.UserIdentityRepository;
 import com.hys.classcord.auth.repository.UserRepository;
-import com.hys.classcord.auth.service.MailService;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
-@ActiveProfiles("test") // 載入 application-test.yml 的測試環境設定
-@AutoConfigureMockMvc // 自動配置 MockMvc，用來模擬 HTTP 請求
-@Transactional // 測試結束後自動 Rollback 資料庫，保持測試資料庫乾淨
-public class AuthenticationIntegrationTest {
+public class AuthenticationIntegrationTest extends BaseIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
 
@@ -42,9 +33,6 @@ public class AuthenticationIntegrationTest {
     @Autowired private UserIdentityRepository userIdentityRepository;
 
     @Autowired private ObjectMapper objectMapper;
-
-    // 用 MockBean 擋掉郵件發送，避免測試時真的連線 Mailpit 或外部伺服器
-    @MockBean private MailService mailService;
 
     // todo 測試環境的redis處理機制
     @BeforeEach

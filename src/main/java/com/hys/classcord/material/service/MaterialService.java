@@ -6,10 +6,13 @@ import com.hys.classcord.channel.entity.Channel;
 import com.hys.classcord.channel.enums.ChannelType;
 import com.hys.classcord.channel.repository.ChannelRepository;
 import com.hys.classcord.core.config.ObjectStorageProperties;
+import com.hys.classcord.core.config.RabbitMQConfig;
 import com.hys.classcord.material.dto.CreateMaterialRequest;
 import com.hys.classcord.material.dto.UploadUrlResponse;
 import com.hys.classcord.material.entity.Material;
 import com.hys.classcord.material.enums.MaterialErrorCode;
+import com.hys.classcord.material.event.MaterialDeleteEvent;
+import com.hys.classcord.material.event.MaterialMoveEvent;
 import com.hys.classcord.material.exception.MaterialException;
 import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.message.entity.Message;
@@ -25,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -51,6 +55,8 @@ public class MaterialService {
     private final RedisScript<Long> rateLimitScript;
     private final ReentrantLock quotaInitLock = new ReentrantLock();
     private final ServerRepository serverRepository;
+
+    private final RabbitTemplate rabbitTemplate;
 
     private static final int MAX_UPLOAD_ATTEMPTS = 10;
     private static final int UPLOAD_LIMIT_EXPIRE_SECONDS = 3600; // 1小時
@@ -168,30 +174,10 @@ public class MaterialService {
             throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS, "您非該上傳憑證的申請者");
         }
 
-        // 2. 將檔案從 temp/ 移入 materials/ (B2 內部拷貝並刪除)
+        // 2. 確定目標路徑 (B2 搬移由 RabbitMQ 非同步處理)
         String newFileKey = request.fileKey().replace("temp/", "materials/" + ticketServerId + "/");
-        storageService.moveFile(request.fileKey(), newFileKey);
 
-        // 3. 建立並儲存貼文
-        Message message =
-                Message.builder().channel(channel).user(user).content(request.content()).build();
-        Message savedMessage = messageRepository.save(message);
-
-        // 4. 建立並儲存教材 (使用憑證鎖定的真實大小，防止前端篡改)
-        Material material =
-                Material.builder()
-                        .message(savedMessage)
-                        .fileUrl(storageService.getPublicFileUrl(newFileKey))
-                        .fileType(request.fileType())
-                        .originalName(request.originalName())
-                        .fileSize(fileSize) // 鎖定大小，防偽造
-                        .build();
-        Material savedMaterial = materialRepository.save(material);
-
-        // 5. 更新全站計數器 (Redis 累加)
-        redisTemplate.opsForValue().increment("QUOTA:SYSTEM:USED", fileSize);
-
-        // 6. 更新班級已用容量 (使用悲觀鎖防止高併發 Lost Update)
+        // 3. 更新班級已用容量 (使用悲觀鎖防止高併發 Lost Update)
         Server server =
                 serverRepository
                         .findByIdForUpdate(UUID.fromString(ticketServerId))
@@ -206,10 +192,37 @@ public class MaterialService {
             throw new MaterialException(
                     MaterialErrorCode.SERVER_STORAGE_LIMIT_EXCEEDED, "班級教材儲存空間已滿");
         }
+
+        // 建立並儲存貼文
+        Message message =
+                Message.builder().channel(channel).user(user).content(request.content()).build();
+        Message savedMessage = messageRepository.save(message);
+
+        // 建立並儲存教材 (使用憑證鎖定的真實大小，防止前端篡改)
+        Material material =
+                Material.builder()
+                        .message(savedMessage)
+                        .fileUrl(storageService.getPublicFileUrl(newFileKey))
+                        .fileType(request.fileType())
+                        .originalName(request.originalName())
+                        .fileSize(fileSize) // 鎖定大小，防偽造
+                        .build();
+        Material savedMaterial = materialRepository.save(material);
+
+        // 更新全站計數器 (Redis 累加)
+        redisTemplate.opsForValue().increment("QUOTA:SYSTEM:USED", fileSize);
+
+        // 更新班級已用容量
         server.setUsedStorage(server.getUsedStorage() + fileSize);
 
-        // 7. 手動清除 Redis 憑證，結束
+        // 手動清除 Redis 憑證
         redisTemplate.delete(ticketKey);
+
+        // 4. 發送非同步搬移訊息給 RabbitMQ
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.MATERIAL_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_MOVE,
+                new MaterialMoveEvent(request.fileKey(), newFileKey));
 
         return savedMaterial;
     }
@@ -233,13 +246,17 @@ public class MaterialService {
                         fileKey, 60, material.getOriginalName());
 
         // 為了不弄髒資料庫中的實體，返回一個設定了臨時網址的複本
-        return Material.builder()
-                .message(material.getMessage())
-                .fileUrl(temporaryDownloadUrl) // 替換為有簽章的安全下載網址
-                .fileType(material.getFileType())
-                .originalName(material.getOriginalName())
-                .fileSize(material.getFileSize())
-                .build();
+        Material copy =
+                Material.builder()
+                        .message(material.getMessage())
+                        .fileUrl(temporaryDownloadUrl)
+                        .fileType(material.getFileType())
+                        .originalName(material.getOriginalName())
+                        .fileSize(material.getFileSize())
+                        .build();
+
+        copy.setId(material.getId()); // 用 Setter 把繼承自父類別的 ID 塞進去
+        return copy;
     }
 
     /** 4. 刪除教材 (會連帶刪除 B2/R2 上的實體檔案) */
@@ -255,23 +272,13 @@ public class MaterialService {
         UUID serverId = message.getChannel().getServer().getId();
         ServerMember member = getAndValidateMembership(serverId, userId);
 
-        // 權限檢查：必須是上傳者本人，或者是該班級的 Teacher/TA
+        // 權限檢查：必須是上傳者本人，或者是該班級的 TEACHER/TA
         boolean isAuthor = message.getUser().getId().equals(userId);
         boolean isTeacherOrTa =
                 member.getRole() == ServerRole.TEACHER || member.getRole() == ServerRole.TA;
 
         if (!isAuthor && !isTeacherOrTa) {
             throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS);
-        }
-
-        // 刪除 R2/B2 上的檔案物件
-        String fileKey = storageService.extractFileKey(material.getFileUrl());
-        try {
-            s3Client.deleteObject(
-                    builder -> builder.bucket(properties.getBucketName()).key(fileKey));
-        } catch (Exception e) {
-            // todo 排程
-            log.error("Failed to delete file from S3: {}", fileKey, e);
         }
 
         // 1. 扣減全站計數器 (Redis)
@@ -293,6 +300,13 @@ public class MaterialService {
 
         // 4. 軟刪除訊息貼文
         messageRepository.delete(message);
+
+        // 5. 發送非同步刪除訊息給 RabbitMQ (解耦 B2 網路刪除)
+        String fileKey = storageService.extractFileKey(material.getFileUrl());
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.MATERIAL_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_DELETE,
+                new MaterialDeleteEvent(fileKey));
     }
 
     /* 私有輔助方法 */

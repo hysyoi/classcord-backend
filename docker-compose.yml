@@ -63,6 +63,32 @@ services:
       timeout: 3s
       retries: 5
 
+  # 5. RabbitMQ 訊息佇列服務
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: classcord_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"   # AMQP 訊息傳送連線埠
+      - "15672:15672" # Web 控制台管理介面連線埠
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    command: >
+      sh -c "rabbitmq-server &
+             until rabbitmqctl await_startup; do sleep 1; done;
+             rabbitmqctl add_vhost /test;
+             rabbitmqctl set_permissions -p /test guest '.*' '.*' '.*';
+             wait"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping && rabbitmqctl list_vhosts | grep -q '/test'"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
   redisdata:
+  rabbitmqdata:

@@ -34,6 +34,20 @@ spring:
       host: localhost
       port: 6379
 
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3         # 最多重試 3 次
+          initial-interval: 1000ms # 第一次重試等 1 秒
+          multiplier: 2.0         # 每次重試加倍等待 (1s -> 2s -> 4s)
+          max-interval: 5000ms    # 最長等待 5 秒
+
 app:
   jwt: # 可能也可以抽成一個properties類
     secret-key: ${JWT_SECRET_KEY}

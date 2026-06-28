@@ -6,6 +6,8 @@ import com.hys.classcord.channel.entity.Channel;
 import com.hys.classcord.channel.enums.ChannelType;
 import com.hys.classcord.channel.repository.ChannelRepository;
 import com.hys.classcord.core.config.ObjectStorageProperties;
+import com.hys.classcord.core.config.RabbitMQConfig;
+import com.hys.classcord.material.event.MaterialDeleteEvent;
 import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.material.service.ObjectStorageService;
 import com.hys.classcord.message.dto.CreateMessageRequest;
@@ -22,6 +24,7 @@ import com.hys.classcord.server.repository.ServerRepository;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +52,7 @@ public class MessageService {
     private final ObjectStorageProperties storageProperties;
     private final S3Client s3Client;
     private final StringRedisTemplate redisTemplate;
+    private final RabbitTemplate rabbitTemplate;
 
     /** 發送訊息 */
     @Transactional
@@ -171,18 +175,6 @@ public class MessageService {
                             material -> {
                                 String fileKey =
                                         storageService.extractFileKey(material.getFileUrl());
-                                try {
-                                    s3Client.deleteObject(
-                                            builder ->
-                                                    builder.bucket(
-                                                                    storageProperties
-                                                                            .getBucketName())
-                                                            .key(fileKey));
-                                } catch (Exception e) {
-                                    // 僅記錄日誌，不阻斷貼文刪除流程，防止孤立貼文刪不掉
-                                    // todo 排程
-                                    log.error("Failed to delete file from S3: {}", fileKey, e);
-                                }
 
                                 // 1. 扣減全站計數器 (Redis)
                                 redisTemplate
@@ -207,6 +199,12 @@ public class MessageService {
 
                                 // 3. 手動物理刪除教材記錄，釋放容量限額
                                 materialRepository.delete(material);
+
+                                // 4. 發送非同步刪除訊息給 RabbitMQ
+                                rabbitTemplate.convertAndSend(
+                                        RabbitMQConfig.MATERIAL_EXCHANGE,
+                                        RabbitMQConfig.ROUTING_KEY_DELETE,
+                                        new MaterialDeleteEvent(fileKey));
                             });
         }
 
