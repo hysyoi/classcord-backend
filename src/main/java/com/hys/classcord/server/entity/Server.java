@@ -17,6 +17,11 @@ public class Server extends AuditableBaseEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Setter
+    @Column(name = "used_storage", nullable = false)
+    @Builder.Default
+    private long usedStorage = 0L;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "owner_id",

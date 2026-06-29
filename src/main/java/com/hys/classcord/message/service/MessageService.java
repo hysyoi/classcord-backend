@@ -5,25 +5,41 @@ import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.channel.entity.Channel;
 import com.hys.classcord.channel.enums.ChannelType;
 import com.hys.classcord.channel.repository.ChannelRepository;
+import com.hys.classcord.core.config.ObjectStorageProperties;
+import com.hys.classcord.core.config.RabbitMQConfig;
+import com.hys.classcord.material.event.MaterialDeleteEvent;
+import com.hys.classcord.material.repository.MaterialRepository;
+import com.hys.classcord.material.service.ObjectStorageService;
 import com.hys.classcord.message.dto.CreateMessageRequest;
 import com.hys.classcord.message.dto.UpdateMessageRequest;
 import com.hys.classcord.message.entity.Message;
 import com.hys.classcord.message.enums.MessageErrorCode;
 import com.hys.classcord.message.exception.MessageException;
 import com.hys.classcord.message.repository.MessageRepository;
+import com.hys.classcord.server.entity.Server;
 import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
+import com.hys.classcord.server.repository.ServerRepository;
+import java.util.Collections;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import software.amazon.awssdk.services.s3.S3Client;
 
 // todo 可新增Redis訊息快取、即時通訊
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
@@ -33,6 +49,15 @@ public class MessageService {
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
     private final ServerMemberRepository serverMemberRepository;
+    private final ServerRepository serverRepository;
+
+    private final MaterialRepository materialRepository;
+    private final ObjectStorageService storageService;
+    private final ObjectStorageProperties storageProperties;
+    private final S3Client s3Client;
+    private final StringRedisTemplate redisTemplate;
+    private final RedisScript<Long> safeDecrScript;
+    private final RabbitTemplate rabbitTemplate;
 
     /** 發送訊息 */
     @Transactional
@@ -119,7 +144,7 @@ public class MessageService {
         message.setContent(request.content());
     }
 
-    /** 刪除訊息 */
+    /** 刪除訊息 (若有教材、一併刪除) */
     @Transactional
     public void deleteMessage(UUID userId, UUID messageId) {
         // 1. 確認訊息存在
@@ -131,7 +156,7 @@ public class MessageService {
 
         // 2. 權限檢查：如果是作者本人，可直接刪除
         if (message.getUser().getId().equals(userId)) {
-            messageRepository.delete(message);
+            cleanUpAndExecuteDelete(message);
             return;
         }
 
@@ -139,10 +164,67 @@ public class MessageService {
         ServerMember member =
                 getAndValidateMembership(message.getChannel().getServer().getId(), userId);
         if (member.getRole() == ServerRole.TEACHER || member.getRole() == ServerRole.TA) {
-            messageRepository.delete(message);
+            cleanUpAndExecuteDelete(message);
         } else {
             throw new MessageException(MessageErrorCode.INSUFFICIENT_PERMISSIONS, "權限不足，無法刪除他人訊息");
         }
+    }
+
+    /** 刪除訊息前的清理輔助方法 */
+    private void cleanUpAndExecuteDelete(Message message) {
+        // 只有當頻道是教材頻道時，才去查詢並刪除 R2/B2 上的檔案與資料庫記錄
+        if (message.getChannel().getType() == ChannelType.MATERIAL) {
+            materialRepository
+                    .findByMessageId(message.getId())
+                    .ifPresent(
+                            material -> {
+                                String fileKey =
+                                        storageService.extractFileKey(material.getFileUrl());
+
+                                // 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
+                                Server server =
+                                        serverRepository
+                                                .findByIdForUpdate(
+                                                        message.getChannel().getServer().getId())
+                                                .orElseThrow(
+                                                        () ->
+                                                                new MessageException(
+                                                                        MessageErrorCode
+                                                                                .CHANNEL_NOT_FOUND,
+                                                                        "找不到該伺服器"));
+                                server.setUsedStorage(
+                                        Math.max(
+                                                0L,
+                                                server.getUsedStorage() - material.getFileSize()));
+
+                                // 手動物理刪除教材記錄，釋放容量限額
+                                materialRepository.delete(material);
+
+                                // 確定 DB Commit 成功後才執行 Redis 與 MQ
+                                TransactionSynchronizationManager.registerSynchronization(
+                                        new TransactionSynchronization() {
+                                            @Override
+                                            public void afterCommit() {
+
+                                                // 安全扣減全站計數器 (Redis 累減，僅在 Key 存在時執行)
+                                                redisTemplate.execute(
+                                                        safeDecrScript,
+                                                        Collections.singletonList(
+                                                                "QUOTA:SYSTEM:USED"),
+                                                        String.valueOf(material.getFileSize()));
+
+                                                // 發送非同步刪除訊息給 RabbitMQ
+                                                rabbitTemplate.convertAndSend(
+                                                        RabbitMQConfig.MATERIAL_EXCHANGE,
+                                                        RabbitMQConfig.ROUTING_KEY_DELETE,
+                                                        new MaterialDeleteEvent(fileKey));
+                                            }
+                                        });
+                            });
+        }
+
+        // 執行貼文刪除 (軟刪除)
+        messageRepository.delete(message);
     }
 
     /** 驗證成員關係之私有輔助方法 */

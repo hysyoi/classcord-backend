@@ -35,7 +35,7 @@ jobs:
         env:
           DB_USERNAME: admin
           DB_PASSWORD: password
-        run: docker compose up -d --wait postgres redis
+        run: docker compose up -d --wait postgres redis-test rabbitmq
 
       # 步驟 5：檢查程式碼格式是否符合規範 (Spotless)
       - name: Check code formatting
