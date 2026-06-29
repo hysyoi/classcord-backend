@@ -32,6 +32,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import software.amazon.awssdk.services.s3.S3Client;
 
 // todo 可新增Redis訊息快取、即時通訊
@@ -176,12 +178,7 @@ public class MessageService {
                                 String fileKey =
                                         storageService.extractFileKey(material.getFileUrl());
 
-                                // 1. 扣減全站計數器 (Redis)
-                                redisTemplate
-                                        .opsForValue()
-                                        .decrement("QUOTA:SYSTEM:USED", material.getFileSize());
-
-                                // 2. 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
+                                // 扣減班級容量 (使用悲觀鎖防止高併發 Lost Update)
                                 Server server =
                                         serverRepository
                                                 .findByIdForUpdate(
@@ -197,14 +194,29 @@ public class MessageService {
                                                 0L,
                                                 server.getUsedStorage() - material.getFileSize()));
 
-                                // 3. 手動物理刪除教材記錄，釋放容量限額
+                                // 手動物理刪除教材記錄，釋放容量限額
                                 materialRepository.delete(material);
 
-                                // 4. 發送非同步刪除訊息給 RabbitMQ
-                                rabbitTemplate.convertAndSend(
-                                        RabbitMQConfig.MATERIAL_EXCHANGE,
-                                        RabbitMQConfig.ROUTING_KEY_DELETE,
-                                        new MaterialDeleteEvent(fileKey));
+                                // 確定 DB Commit 成功後才執行 Redis 與 MQ
+                                TransactionSynchronizationManager.registerSynchronization(
+                                        new TransactionSynchronization() {
+                                            @Override
+                                            public void afterCommit() {
+
+                                                // 扣減全站計數器 (Redis)
+                                                redisTemplate
+                                                        .opsForValue()
+                                                        .decrement(
+                                                                "QUOTA:SYSTEM:USED",
+                                                                material.getFileSize());
+
+                                                // 發送非同步刪除訊息給 RabbitMQ
+                                                rabbitTemplate.convertAndSend(
+                                                        RabbitMQConfig.MATERIAL_EXCHANGE,
+                                                        RabbitMQConfig.ROUTING_KEY_DELETE,
+                                                        new MaterialDeleteEvent(fileKey));
+                                            }
+                                        });
                             });
         }
 

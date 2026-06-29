@@ -22,13 +22,13 @@ import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
-import java.time.Duration;
 import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -57,8 +57,8 @@ public class MaterialService {
     private final S3Client s3Client;
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
-    private final ReentrantLock quotaInitLock = new ReentrantLock();
     private final ServerRepository serverRepository;
+    private final RedissonClient redissonClient;
 
     private final RabbitTemplate rabbitTemplate;
 
@@ -128,29 +128,28 @@ public class MaterialService {
         return new UploadUrlResponse(uploadUrl, fileKey);
     }
 
-    /** 初始化全站已用容量計數器 (雙重檢查鎖，高併發擊穿) */
+    /** 初始化全站已用容量計數器 (使用 Redisson 分散式鎖 + 雙重檢查，防擊穿) */
     private void initSystemQuotaCounterIfAbsent() {
         if (Boolean.FALSE.equals(redisTemplate.hasKey("QUOTA:SYSTEM:USED"))) {
-            // 1. 嘗試搶全域分散式鎖（設定 5 秒過期時間，防止程式死機造成死鎖）
-            Boolean acquired =
-                    redisTemplate
-                            .opsForValue()
-                            .setIfAbsent("LOCK:SYSTEM:QUOTA", "LOCKED", Duration.ofSeconds(5));
-
-            if (Boolean.TRUE.equals(acquired)) {
-                try {
-                    // 2. 第二層檢查 (Double Check)
-                    if (Boolean.FALSE.equals(redisTemplate.hasKey("QUOTA:SYSTEM:USED"))) {
-                        long usedSystem = materialRepository.sumAllFileSizes();
-                        redisTemplate
-                                .opsForValue()
-                                .set("QUOTA:SYSTEM:USED", String.valueOf(usedSystem));
-                        log.info("全站已用容量計數器初始化成功: {} Bytes", usedSystem);
+            RLock lock = redissonClient.getLock("LOCK:SYSTEM:QUOTA");
+            try {
+                // 嘗試獲取鎖：最多等待 3 秒，搶到鎖後由 Watchdog 自動續期
+                if (lock.tryLock(3, TimeUnit.SECONDS)) {
+                    try {
+                        // 第二層檢查 (Double Check)
+                        if (Boolean.FALSE.equals(redisTemplate.hasKey("QUOTA:SYSTEM:USED"))) {
+                            long usedSystem = materialRepository.sumAllFileSizes();
+                            redisTemplate
+                                    .opsForValue()
+                                    .set("QUOTA:SYSTEM:USED", String.valueOf(usedSystem));
+                            log.info("全站已用容量計數器初始化成功: {} Bytes", usedSystem);
+                        }
+                    } finally {
+                        lock.unlock(); // 釋放鎖並自動廣播通知其他人
                     }
-                } finally {
-                    // 3. 在 finally 釋放鎖，讓給別人
-                    redisTemplate.delete("LOCK:SYSTEM:QUOTA");
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
     }

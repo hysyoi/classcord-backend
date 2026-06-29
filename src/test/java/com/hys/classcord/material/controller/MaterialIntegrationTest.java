@@ -36,6 +36,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -265,6 +267,12 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
         // 4.1 教師刪除該條教材訊息
         mockMvc.perform(delete("/v1/messages/" + messageId).header("Authorization", teacherToken))
                 .andExpect(status().isNoContent());
+
+        // 觸發在測試交易中註冊的 afterCommit 回呼以發送 MQ 訊息
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+        }
 
         // 驗證 A: JPA 查不到該條 message 和 material
         assertFalse(messageRepository.existsById(messageId));
