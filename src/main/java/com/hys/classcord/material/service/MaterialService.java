@@ -57,6 +57,8 @@ public class MaterialService {
     private final S3Client s3Client;
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
+    private final RedisScript<Long> safeIncrScript;
+    private final RedisScript<Long> safeDecrScript;
     private final ServerRepository serverRepository;
     private final RedissonClient redissonClient;
 
@@ -229,8 +231,11 @@ public class MaterialService {
                     public void afterCommit() {
                         // 只有資料庫 Commit 成功後，這裡才會被觸發！
 
-                        // 更新全站計數器 (Redis 累加)
-                        redisTemplate.opsForValue().increment("QUOTA:SYSTEM:USED", fileSize);
+                        // 安全更新全站計數器 (Redis 累加，僅在 Key 存在時執行)
+                        redisTemplate.execute(
+                                safeIncrScript,
+                                Collections.singletonList("QUOTA:SYSTEM:USED"),
+                                String.valueOf(fileSize));
 
                         // 手動清除 Redis 憑證
                         redisTemplate.delete(ticketKey);
@@ -323,10 +328,11 @@ public class MaterialService {
                     public void afterCommit() {
                         // 只有資料庫 Commit 成功後，這裡才會被觸發！
 
-                        // 扣減全站計數器 (Redis)
-                        redisTemplate
-                                .opsForValue()
-                                .decrement("QUOTA:SYSTEM:USED", material.getFileSize());
+                        // 安全扣減全站計數器 (Redis 累減，僅在 Key 存在時執行)
+                        redisTemplate.execute(
+                                safeDecrScript,
+                                Collections.singletonList("QUOTA:SYSTEM:USED"),
+                                String.valueOf(material.getFileSize()));
 
                         // 發送非同步刪除訊息給 RabbitMQ (解耦 B2 網路刪除)
                         String fileKey = storageService.extractFileKey(material.getFileUrl());

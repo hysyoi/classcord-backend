@@ -21,6 +21,7 @@ import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
+import java.util.Collections;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -54,6 +56,7 @@ public class MessageService {
     private final ObjectStorageProperties storageProperties;
     private final S3Client s3Client;
     private final StringRedisTemplate redisTemplate;
+    private final RedisScript<Long> safeDecrScript;
     private final RabbitTemplate rabbitTemplate;
 
     /** 發送訊息 */
@@ -203,12 +206,12 @@ public class MessageService {
                                             @Override
                                             public void afterCommit() {
 
-                                                // 扣減全站計數器 (Redis)
-                                                redisTemplate
-                                                        .opsForValue()
-                                                        .decrement(
-                                                                "QUOTA:SYSTEM:USED",
-                                                                material.getFileSize());
+                                                // 安全扣減全站計數器 (Redis 累減，僅在 Key 存在時執行)
+                                                redisTemplate.execute(
+                                                        safeDecrScript,
+                                                        Collections.singletonList(
+                                                                "QUOTA:SYSTEM:USED"),
+                                                        String.valueOf(material.getFileSize()));
 
                                                 // 發送非同步刪除訊息給 RabbitMQ
                                                 rabbitTemplate.convertAndSend(
