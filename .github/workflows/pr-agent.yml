@@ -40,7 +40,7 @@ jobs:
           webhook: ${{ secrets.DISCORD_PR_WEBHOOK_URL }}
           status: ${{ job.status }}
           content: "<@${{ secrets.DISCORD_USER_ID }}> AI PR Agent Review 執行完畢！"
-          title: "🤖 AI PR Agent Review"
+          title: "AI PR Agent Review"
           description: |
             **PR / Issue 號碼**: #${{ github.event.issue.number }}
             **觸發者**: `${{ github.actor }}`
