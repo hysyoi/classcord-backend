@@ -7,9 +7,11 @@ import com.hys.classcord.material.event.MaterialMoveEvent;
 import com.hys.classcord.material.service.ObjectStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 @Component
 @Slf4j
@@ -27,9 +29,12 @@ public class MaterialEventConsumer {
         try {
             storageService.moveFile(event.sourceKey(), event.targetKey());
             log.info("[MQ Consumer] 檔案搬移完成: {}", event.targetKey());
+        } catch (NoSuchKeyException e) {
+            // 捕獲 S3 找不到檔案的不可恢復錯誤，直接拒絕不重試，發往 DLQ
+            log.warn("[MQ Consumer] 源檔案不存在，跳過搬移並送入死信佇列: {}", event.sourceKey());
+            throw new AmqpRejectAndDontRequeueException("源檔案不存在，拒絕重試", e);
         } catch (Exception e) {
             log.error("[MQ Consumer] 檔案搬移失敗: {}", event.sourceKey(), e);
-            // 可根據業務需求拋出異常，觸發 RabbitMQ 重試機制或進入死信佇列
             throw e;
         }
     }
