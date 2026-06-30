@@ -27,6 +27,15 @@ public class RabbitMQConfig {
     public static final String DELETE_DLQ = "classcord.material.delete.dlq";
     public static final String ROUTING_KEY_DELETE_DLK = "material.delete.dlk";
 
+    // AI 助教佇列常數
+    public static final String AI_EXCHANGE = "classcord.ai.exchange";
+    public static final String RAG_PROCESS_QUEUE = "classcord.ai.rag.process.queue";
+    public static final String ROUTING_KEY_RAG_PROCESS = "ai.rag.process";
+
+    //  DLX / DLQ
+    public static final String RAG_PROCESS_DLQ = "classcord.ai.rag.process.dlq";
+    public static final String ROUTING_KEY_RAG_DLK = "ai.rag.process.dlk";
+
     /** 配置主要 Direct Exchange */
     @Bean
     public DirectExchange materialExchange() {
@@ -89,6 +98,38 @@ public class RabbitMQConfig {
     @Bean
     public Binding deleteDlqBinding(Queue deleteDlq, DirectExchange materialDlx) {
         return BindingBuilder.bind(deleteDlq).to(materialDlx).with(ROUTING_KEY_DELETE_DLK);
+    }
+
+    /** 配置 AI 主要 Exchange */
+    @Bean
+    public DirectExchange aiExchange() {
+        return new DirectExchange(AI_EXCHANGE);
+    }
+
+    /** 配置 AI RAG 處理佇列 (綁定 DLX) */
+    @Bean
+    public Queue ragProcessQueue() {
+        return QueueBuilder.durable(RAG_PROCESS_QUEUE)
+                .deadLetterExchange(MATERIAL_DLX) // 共享現有的死信 Exchange
+                .deadLetterRoutingKey(ROUTING_KEY_RAG_DLK)
+                .build();
+    }
+
+    /** 配置 AI RAG 死信佇列 */
+    @Bean
+    public Queue ragProcessDlq() {
+        return QueueBuilder.durable(RAG_PROCESS_DLQ).build();
+    }
+
+    /** 綁定 AI 佇列 */
+    @Bean
+    public Binding ragProcessBinding(Queue ragProcessQueue, DirectExchange aiExchange) {
+        return BindingBuilder.bind(ragProcessQueue).to(aiExchange).with(ROUTING_KEY_RAG_PROCESS);
+    }
+
+    @Bean
+    public Binding ragProcessDlqBinding(Queue ragProcessDlq, DirectExchange materialDlx) {
+        return BindingBuilder.bind(ragProcessDlq).to(materialDlx).with(ROUTING_KEY_RAG_DLK);
     }
 
     /** JSON 訊息轉譯器 */

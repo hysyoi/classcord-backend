@@ -50,6 +50,11 @@ spring:
             client-id: mock-discord-client-id
             client-secret: mock-discord-client-secret
 
+  # 5. 測試專用的 Spring AI Mock 設定，避開 API Key 未填錯誤
+  ai:
+    openai:
+      api-key: mock-openai-key-for-testing
+
 # 測試專用的密鑰與 URL 設定
 app:
   jwt:
