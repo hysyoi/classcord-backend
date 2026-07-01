@@ -9,7 +9,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
-    // 1. 主要 Exchange 與 Queue 常數
+    // =========================================================================
+    // 1. 教材模組主要 Exchange 與 Queue 常數
+    // =========================================================================
     public static final String MATERIAL_EXCHANGE = "classcord.material.exchange";
 
     public static final String MOVE_QUEUE = "classcord.material.move.queue";
@@ -18,7 +20,9 @@ public class RabbitMQConfig {
     public static final String DELETE_QUEUE = "classcord.material.delete.queue";
     public static final String ROUTING_KEY_DELETE = "material.delete";
 
-    // 2. 死信佇列 (DLX & DLQ) 常數
+    // =========================================================================
+    // 2. 共享死信佇列 (DLX & DLQ) 常數
+    // =========================================================================
     public static final String MATERIAL_DLX = "classcord.material.dlx";
 
     public static final String MOVE_DLQ = "classcord.material.move.dlq";
@@ -27,14 +31,25 @@ public class RabbitMQConfig {
     public static final String DELETE_DLQ = "classcord.material.delete.dlq";
     public static final String ROUTING_KEY_DELETE_DLK = "material.delete.dlk";
 
-    // AI 助教佇列常數
+    // =========================================================================
+    // 3. AI 助教對話/RAG 處理佇列常數
+    // =========================================================================
     public static final String AI_EXCHANGE = "classcord.ai.exchange";
     public static final String RAG_PROCESS_QUEUE = "classcord.ai.rag.process.queue";
     public static final String ROUTING_KEY_RAG_PROCESS = "ai.rag.process";
 
-    //  DLX / DLQ
     public static final String RAG_PROCESS_DLQ = "classcord.ai.rag.process.dlq";
     public static final String ROUTING_KEY_RAG_DLK = "ai.rag.process.dlk";
+
+    // =========================================================================
+    // 4. AI 測驗與出題模組佇列常數 (Quiz Module Async Generation)
+    // =========================================================================
+    public static final String QUIZ_EXCHANGE = "classcord.quiz.exchange";
+    public static final String QUIZ_GEN_QUEUE = "classcord.quiz.generation.queue";
+    public static final String ROUTING_KEY_QUIZ_GEN = "quiz.generation";
+
+    public static final String QUIZ_GEN_DLQ = "classcord.quiz.generation.dlq";
+    public static final String ROUTING_KEY_QUIZ_GEN_DLK = "quiz.generation.dlk";
 
     /** 配置主要 Direct Exchange */
     @Bean
@@ -130,6 +145,43 @@ public class RabbitMQConfig {
     @Bean
     public Binding ragProcessDlqBinding(Queue ragProcessDlq, DirectExchange materialDlx) {
         return BindingBuilder.bind(ragProcessDlq).to(materialDlx).with(ROUTING_KEY_RAG_DLK);
+    }
+
+    // =========================================================================
+    // 5. AI 測驗與出題模組 (Quiz Module) Bean 宣告
+    // =========================================================================
+
+    /** 配置測驗模組主要 Direct Exchange */
+    @Bean
+    public DirectExchange quizExchange() {
+        return new DirectExchange(QUIZ_EXCHANGE);
+    }
+
+    /** 配置測驗背景出題佇列 (綁定共享的死信 Exchange) */
+    @Bean
+    public Queue quizGenQueue() {
+        return QueueBuilder.durable(QUIZ_GEN_QUEUE)
+                .deadLetterExchange(MATERIAL_DLX)
+                .deadLetterRoutingKey(ROUTING_KEY_QUIZ_GEN_DLK)
+                .build();
+    }
+
+    /** 配置測驗出題死信佇列 (DLQ) */
+    @Bean
+    public Queue quizGenDlq() {
+        return QueueBuilder.durable(QUIZ_GEN_DLQ).build();
+    }
+
+    /** 綁定出題佇列至主要 Exchange */
+    @Bean
+    public Binding quizGenBinding(Queue quizGenQueue, DirectExchange quizExchange) {
+        return BindingBuilder.bind(quizGenQueue).to(quizExchange).with(ROUTING_KEY_QUIZ_GEN);
+    }
+
+    /** 綁定出題死信佇列至死信 Exchange */
+    @Bean
+    public Binding quizGenDlqBinding(Queue quizGenDlq, DirectExchange materialDlx) {
+        return BindingBuilder.bind(quizGenDlq).to(materialDlx).with(ROUTING_KEY_QUIZ_GEN_DLK);
     }
 
     /** JSON 訊息轉譯器 */

@@ -1,32 +1,58 @@
 package com.hys.classcord.ai.service;
 
+import com.hys.classcord.ai.entity.AiMessage;
+import com.hys.classcord.ai.entity.AiSession;
+import com.hys.classcord.ai.enums.AiMessageRole;
+import com.hys.classcord.ai.repository.AiMessageRepository;
+import com.hys.classcord.ai.repository.AiSessionRepository;
+import com.hys.classcord.auth.entity.User;
+import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.core.config.RabbitMQConfig;
 import com.hys.classcord.material.entity.Material;
 import com.hys.classcord.material.enums.MaterialErrorCode;
 import com.hys.classcord.material.enums.MaterialStatus;
 import com.hys.classcord.material.exception.MaterialException;
 import com.hys.classcord.material.repository.MaterialRepository;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+// todo 效能
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class AiAssistantService {
 
     private final MaterialRepository materialRepository;
     private final RabbitTemplate rabbitTemplate;
     private final VectorStore vectorStore;
     private final ChatClient.Builder chatClientBuilder;
+    private final UserRepository userRepository;
+    private final AiSessionRepository aiSessionRepository;
+    private final AiMessageRepository aiMessageRepository;
+
+    @Value("classpath:prompts/rag-prompt.st")
+    private Resource promptResource;
 
     @Transactional
     public void enableAiAssistant(UUID materialId) {
@@ -57,10 +83,9 @@ public class AiAssistantService {
         log.info("已成功推送 RAG 處理消息至 RabbitMQ: materialId={}", materialId);
     }
 
-    /** 核心 RAG 對話邏輯 */
-    @Transactional(readOnly = true)
-    public String chatWithMaterial(UUID materialId, String userMessage) {
-        // 1. 檢驗教材狀態
+    /** 1. 創建新的對話會話 */
+    @Transactional
+    public AiSession createSession(UUID userId, UUID materialId) {
         Material material =
                 materialRepository
                         .findById(materialId)
@@ -69,27 +94,137 @@ public class AiAssistantService {
 
         if (material.getStatus() != MaterialStatus.ENABLED) {
             throw new MaterialException(
+                    MaterialErrorCode.AI_ASSISTANT_PROCESSING, "該教材尚未完成 AI 助教啟用，無法建立對話");
+        }
+
+        User user =
+                userRepository
+                        .findById(userId)
+                        .orElseThrow(() -> new MaterialException(MaterialErrorCode.USER_NOT_FOUND));
+
+        AiSession session = AiSession.builder().user(user).material(material).build();
+
+        return aiSessionRepository.save(session);
+    }
+
+    /** 2. 查詢使用者在某教材下的對話會話列表 */
+    public List<AiSession> listSessions(UUID userId, UUID materialId) {
+        return aiSessionRepository.findByUserIdAndMaterialIdOrderByCreatedAtDesc(
+                userId, materialId);
+    }
+
+    /** 3. 獲取會話中最近 10 條歷史訊息 */
+    public List<AiMessage> getSessionMessages(UUID userId, UUID sessionId) {
+        AiSession session =
+                aiSessionRepository
+                        .findById(sessionId)
+                        .orElseThrow(
+                                () ->
+                                        new MaterialException(
+                                                MaterialErrorCode.MATERIAL_NOT_FOUND, "對話會話不存在"));
+
+        if (!session.getUser().getId().equals(userId)) {
+            throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS, "您無權查看此對話紀錄");
+        }
+
+        // 預設撈取最近 10 條訊息
+        List<AiMessage> messages =
+                aiMessageRepository.findBySessionIdOrderByCreatedAtDesc(sessionId, Limit.of(10));
+
+        // 原本是新到舊，反轉為舊到新 (時間遞增順序)
+        List<AiMessage> chronologicalMessages = new ArrayList<>(messages);
+        Collections.reverse(chronologicalMessages);
+        return chronologicalMessages;
+    }
+
+    /** 4. 在會話中進行連續對話 (載入歷史上下文 + RAG) */
+    @Transactional
+    public String chatInSession(UUID userId, UUID sessionId, String userMessage) {
+        AiSession session =
+                aiSessionRepository
+                        .findById(sessionId)
+                        .orElseThrow(
+                                () ->
+                                        new MaterialException(
+                                                MaterialErrorCode.MATERIAL_NOT_FOUND, "對話會話不存在"));
+
+        if (!session.getUser().getId().equals(userId)) {
+            throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS, "您無權在此對話中發言");
+        }
+
+        Material material = session.getMaterial();
+        if (material.getStatus() != MaterialStatus.ENABLED) {
+            throw new MaterialException(
                     MaterialErrorCode.AI_ASSISTANT_PROCESSING, "該教材尚未完成 AI 助教啟用，暫無法回答");
         }
 
-        // 2. 建立多租戶向量過濾條件
+        // A. 效能與記憶體優化：先撈取前 9 條歷史訊息 (新到舊)
+        List<AiMessage> historyEntities =
+                aiMessageRepository.findBySessionIdOrderByCreatedAtDesc(sessionId, Limit.of(9));
+        List<AiMessage> chronologicalHistory = new ArrayList<>(historyEntities);
+        Collections.reverse(chronologicalHistory);
+
+        // B. 儲存當前使用者的提問訊息至資料庫
+        AiMessage userAiMsg =
+                AiMessage.builder()
+                        .session(session)
+                        .role(AiMessageRole.USER)
+                        .content(userMessage)
+                        .build();
+        aiMessageRepository.save(userAiMsg);
+
+        // C. 組裝為 Spring AI 支援的 Message 清單 (僅歷史紀錄)
+        List<Message> springAiMessages = new ArrayList<>();
+        for (AiMessage msg : chronologicalHistory) {
+            if (AiMessageRole.USER == msg.getRole()) {
+                springAiMessages.add(new UserMessage(msg.getContent()));
+            } else if (AiMessageRole.ASSISTANT == msg.getRole()) {
+                springAiMessages.add(new AssistantMessage(msg.getContent()));
+            }
+        }
+
+        // D. 建立多租戶向量過濾條件 (限定在該教材下)
         var filterExpression =
-                new FilterExpressionBuilder().eq("material_id", materialId.toString()).build();
+                new FilterExpressionBuilder()
+                        .eq("material_id", material.getId().toString())
+                        .build();
 
-        // 3. 呼叫 Spring AI 執行檢索與問答 (使用 Builder 建立 SearchRequest)
+        // E. 讀取外部 ST 提示詞資源
+        String promptTemplate;
+        try {
+            promptTemplate = promptResource.getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("無法加載 AI 提示詞模板檔案", e);
+            throw new IllegalStateException("AI 服務內部錯誤，無法載入模板", e);
+        }
+
+        // F. 呼叫 Spring AI 執行檢索與問答 (傳入歷史，並指定當前提問為 .user() 以替換 {query})
         ChatClient chatClient = chatClientBuilder.build();
+        String assistantReply =
+                chatClient
+                        .prompt()
+                        .messages(springAiMessages)
+                        .user(u -> u.text(userMessage).param("query", userMessage))
+                        .advisors(
+                                new QuestionAnswerAdvisor(
+                                        vectorStore,
+                                        SearchRequest.builder()
+                                                .query(userMessage) // 僅使用當前提問內容進行向量檢索，確保檢索精準度
+                                                .filterExpression(filterExpression)
+                                                .build(),
+                                        promptTemplate))
+                        .call()
+                        .content();
 
-        return chatClient
-                .prompt()
-                .user(userMessage)
-                .advisors(
-                        new QuestionAnswerAdvisor(
-                                vectorStore,
-                                SearchRequest.builder()
-                                        .query(userMessage)
-                                        .filterExpression(filterExpression)
-                                        .build()))
-                .call()
-                .content();
+        // G. 儲存 AI 助教的回覆訊息至資料庫
+        AiMessage assistantAiMsg =
+                AiMessage.builder()
+                        .session(session)
+                        .role(AiMessageRole.ASSISTANT)
+                        .content(assistantReply)
+                        .build();
+        aiMessageRepository.save(assistantAiMsg);
+
+        return assistantReply;
     }
 }

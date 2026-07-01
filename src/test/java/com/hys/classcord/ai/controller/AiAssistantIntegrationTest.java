@@ -8,6 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hys.classcord.BaseIntegrationTest;
+import com.hys.classcord.ai.dto.AiChatRequest;
+import com.hys.classcord.ai.dto.CreateSessionRequest;
+import com.hys.classcord.ai.entity.AiMessage;
+import com.hys.classcord.ai.entity.AiSession;
+import com.hys.classcord.ai.repository.AiMessageRepository;
+import com.hys.classcord.ai.repository.AiSessionRepository;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
@@ -22,15 +28,19 @@ import com.hys.classcord.message.entity.Message;
 import com.hys.classcord.message.repository.MessageRepository;
 import com.hys.classcord.server.entity.Server;
 import com.hys.classcord.server.repository.ServerRepository;
+import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -44,6 +54,8 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
     @Autowired private ChannelRepository channelRepository;
     @Autowired private MessageRepository messageRepository;
     @Autowired private MaterialRepository materialRepository;
+    @Autowired private AiSessionRepository aiSessionRepository;
+    @Autowired private AiMessageRepository aiMessageRepository;
     @SpyBean private RabbitTemplate rabbitTemplate;
     @Autowired private ObjectMapper objectMapper;
 
@@ -141,5 +153,94 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
                                 .header("Authorization", teacherToken))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("MATERIAL_011"));
+    }
+
+    @Test
+    void testSessionBasedChatLifecycle() throws Exception {
+        // ==========================================
+        // 1. 在教材未啟用時，嘗試建立會話 ➔ 失敗 (409 Conflict / AI_ASSISTANT_PROCESSING)
+        // ==========================================
+        CreateSessionRequest createRequest = new CreateSessionRequest(testMaterial.getId());
+        mockMvc.perform(
+                        post("/v1/materials/chat-sessions")
+                                .header("Authorization", teacherToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isConflict());
+
+        // ==========================================
+        // 2. 模擬教材啟用成功，建立會話 ➔ 成功 (200 OK)
+        // ==========================================
+        testMaterial.markAsEnabled();
+        materialRepository.save(testMaterial);
+
+        mockMvc.perform(
+                        post("/v1/materials/chat-sessions")
+                                .header("Authorization", teacherToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").exists())
+                .andExpect(jsonPath("$.materialId").value(testMaterial.getId().toString()));
+
+        // 從資料庫找出會話
+        List<AiSession> sessions =
+                aiSessionRepository.findByUserIdAndMaterialIdOrderByCreatedAtDesc(
+                        teacher.getId(), testMaterial.getId());
+        assertFalse(sessions.isEmpty());
+        UUID sessionId = sessions.get(0).getId();
+
+        // ==========================================
+        // 3. 查詢會話列表 ➔ 成功 (200 OK)
+        // ==========================================
+        mockMvc.perform(
+                        get("/v1/materials/chat-sessions")
+                                .header("Authorization", teacherToken)
+                                .param("materialId", testMaterial.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(sessionId.toString()));
+
+        // ==========================================
+        // 4. 模擬連續對話 (Spring AI ChatClient 串接) ➔ 成功 (200 OK)
+        // ==========================================
+        ChatClient mockChatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec mockRequestSpec =
+                mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec mockCallResponseSpec = mock(ChatClient.CallResponseSpec.class);
+
+        when(chatClientBuilder.build()).thenReturn(mockChatClient);
+        when(mockChatClient.prompt()).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.messages(anyList())).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.user(any(Consumer.class))).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.advisors(any(Advisor[].class))).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.call()).thenReturn(mockCallResponseSpec);
+        when(mockCallResponseSpec.content()).thenReturn("這是模擬的 AI 助教答覆");
+
+        AiChatRequest chatRequest = new AiChatRequest("哈囉，我想問這份講義在講什麼？");
+        mockMvc.perform(
+                        post("/v1/materials/chat-sessions/" + sessionId + "/chat")
+                                .header("Authorization", teacherToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(chatRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value("這是模擬的 AI 助教答覆"));
+
+        // ==========================================
+        // 5. 獲取會話歷史訊息，確認兩筆訊息已入庫（學生 user 提問 + 助教 assistant 回答）
+        // ==========================================
+        mockMvc.perform(
+                        get("/v1/materials/chat-sessions/" + sessionId + "/messages")
+                                .header("Authorization", teacherToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].role").value("user"))
+                .andExpect(jsonPath("$[0].content").value("哈囉，我想問這份講義在講什麼？"))
+                .andExpect(jsonPath("$[1].role").value("assistant"))
+                .andExpect(jsonPath("$[1].content").value("這是模擬的 AI 助教答覆"));
+
+        // 直接查 Repository 確保落庫成功
+        List<AiMessage> dbMessages =
+                aiMessageRepository.findBySessionIdOrderByCreatedAtDesc(
+                        sessionId, org.springframework.data.domain.Limit.of(10));
+        assertEquals(2, dbMessages.size());
     }
 }
