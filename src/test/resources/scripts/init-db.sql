@@ -1,1 +1,3 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE DATABASE classcord_test;
