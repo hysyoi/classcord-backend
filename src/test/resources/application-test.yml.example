@@ -6,8 +6,8 @@ spring:
     password: password
 
   jpa:
-      hibernate:
-        ddl-auto: create-drop
+    hibernate:
+      ddl-auto: update
 
   # 2. Redis 連線資訊
   data:
