@@ -35,7 +35,6 @@ import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
 import java.util.*;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -65,14 +64,12 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
 
     @MockBean private ChatClient.Builder chatClientBuilder;
 
-    private User teacher;
-    private User student;
     private String teacherToken;
     private String studentToken;
     private Material testMaterial;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         // 清理資料庫以防干擾
         quizQuestionRepository.deleteAll();
         quizRepository.deleteAll();
@@ -80,10 +77,10 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
         materialChunkRepository.deleteAll();
 
         // 1. 建立使用者與 Token
-        teacher =
+        User teacher =
                 userRepository.save(
                         User.builder().username("QuizTeacher").email("q-teacher@test.com").build());
-        student =
+        User student =
                 userRepository.save(
                         User.builder().username("QuizStudent").email("q-student@test.com").build());
 
@@ -154,7 +151,10 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
 
         when(chatClientBuilder.build()).thenReturn(mockChatClient);
         when(mockChatClient.prompt()).thenReturn(mockRequestSpec);
-        when(mockRequestSpec.user(any(Consumer.class))).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.user(
+                        org.mockito.ArgumentMatchers
+                                .<java.util.function.Consumer<ChatClient.PromptUserSpec>>any()))
+                .thenReturn(mockRequestSpec);
         when(mockRequestSpec.call()).thenReturn(mockCallResponseSpec);
 
         String mockAiJsonResponse =

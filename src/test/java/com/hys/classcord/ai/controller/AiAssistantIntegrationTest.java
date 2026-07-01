@@ -30,7 +30,6 @@ import com.hys.classcord.server.entity.Server;
 import com.hys.classcord.server.repository.ServerRepository;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -60,7 +59,7 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
 
     // 模擬 AI 元件，避免測試時呼叫真實雲端 API 或因缺少 Key 而啟動失敗
-    @MockBean private VectorStore vectorStore;
+    @MockBean VectorStore vectorStore;
     @MockBean private ChatClient.Builder chatClientBuilder;
 
     private User teacher;
@@ -68,9 +67,11 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
     private Material testMaterial;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         // 清空相關佇列以防干擾
-        while (rabbitTemplate.receiveAndConvert(RabbitMQConfig.RAG_PROCESS_QUEUE) != null) {}
+        while (rabbitTemplate.receiveAndConvert(RabbitMQConfig.RAG_PROCESS_QUEUE) != null) {
+            // 排水：持續讀取直到佇列清空
+        }
 
         // 1. 建立測試使用者與 Token
         teacher =
@@ -188,7 +189,7 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
                 aiSessionRepository.findByUserIdAndMaterialIdOrderByCreatedAtDesc(
                         teacher.getId(), testMaterial.getId());
         assertFalse(sessions.isEmpty());
-        UUID sessionId = sessions.get(0).getId();
+        UUID sessionId = sessions.getFirst().getId();
 
         // ==========================================
         // 3. 查詢會話列表 ➔ 成功 (200 OK)
@@ -211,7 +212,10 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
         when(chatClientBuilder.build()).thenReturn(mockChatClient);
         when(mockChatClient.prompt()).thenReturn(mockRequestSpec);
         when(mockRequestSpec.messages(anyList())).thenReturn(mockRequestSpec);
-        when(mockRequestSpec.user(any(Consumer.class))).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.user(
+                        org.mockito.ArgumentMatchers
+                                .<java.util.function.Consumer<ChatClient.PromptUserSpec>>any()))
+                .thenReturn(mockRequestSpec);
         when(mockRequestSpec.advisors(any(Advisor[].class))).thenReturn(mockRequestSpec);
         when(mockRequestSpec.call()).thenReturn(mockCallResponseSpec);
         when(mockCallResponseSpec.content()).thenReturn("這是模擬的 AI 助教答覆");

@@ -14,7 +14,7 @@ public interface MaterialChunkRepository extends JpaRepository<MaterialChunk, UU
     @Query(
             value =
                     "SELECT * FROM material_chunks WHERE metadata ->> 'material_id' = :materialId "
-                            + "ORDER BY (metadata ->> 'chunk_index')::int ASC",
+                            + "ORDER BY (metadata ->> 'chunk_index')::int",
             nativeQuery = true)
     List<MaterialChunk> findByMaterialId(@Param("materialId") String materialId);
 }

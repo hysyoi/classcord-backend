@@ -28,13 +28,18 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.Filter.Expression;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 // todo 效能
 @Slf4j
@@ -140,6 +145,73 @@ public class AiAssistantService {
     /** 4. 在會話中進行連續對話 (載入歷史上下文 + RAG) */
     @Transactional
     public String chatInSession(UUID userId, UUID sessionId, String userMessage) {
+        ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
+
+        // F. 呼叫 Spring AI 執行檢索與問答 (傳入歷史，並指定當前提問為 .user() 以替換 {query})
+        ChatClient chatClient = chatClientBuilder.build();
+        String assistantReply =
+                chatClient
+                        .prompt()
+                        .messages(ctx.springAiMessages())
+                        .user(u -> u.text(userMessage).param("query", userMessage))
+                        .advisors(
+                                new QuestionAnswerAdvisor(
+                                        vectorStore,
+                                        SearchRequest.builder()
+                                                .query(userMessage) // 僅使用當前提問內容進行向量檢索，確保檢索精準度
+                                                .filterExpression(ctx.filterExpression())
+                                                .build(),
+                                        ctx.promptTemplate()))
+                        .call()
+                        .content();
+
+        // G. 儲存 AI 助教的回覆訊息至資料庫
+        AiMessage assistantAiMsg =
+                AiMessage.builder()
+                        .session(ctx.session())
+                        .role(AiMessageRole.ASSISTANT)
+                        .content(assistantReply)
+                        .build();
+        aiMessageRepository.save(assistantAiMsg);
+
+        return assistantReply;
+    }
+
+    /** 5. 在會話中進行流式連續對話 (載入歷史上下文 + RAG + SSE 吐字) */
+    @Transactional
+    public Flux<String> chatInSessionStream(UUID userId, UUID sessionId, String userMessage) {
+        ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
+
+        StringBuilder fullReply = new StringBuilder();
+        ChatClient chatClient = chatClientBuilder.build();
+
+        return chatClient
+                .prompt()
+                .messages(ctx.springAiMessages())
+                .user(u -> u.text(userMessage).param("query", userMessage))
+                .advisors(
+                        new QuestionAnswerAdvisor(
+                                vectorStore,
+                                SearchRequest.builder()
+                                        .query(userMessage)
+                                        .filterExpression(ctx.filterExpression())
+                                        .build(),
+                                ctx.promptTemplate()))
+                .stream()
+                .content()
+                .doOnNext(fullReply::append)
+                .doOnComplete(
+                        () ->
+                                Mono.fromRunnable(
+                                                () ->
+                                                        saveAssistantMessage(
+                                                                sessionId, fullReply.toString()))
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .subscribe());
+    }
+
+    /** 建立一個內部的共用 ChatContext，用來封裝 RAG 與歷史訊息前置載入邏輯 */
+    private ChatContext prepareChatContext(UUID userId, UUID sessionId, String userMessage) {
         AiSession session =
                 aiSessionRepository
                         .findById(sessionId)
@@ -198,33 +270,31 @@ public class AiAssistantService {
             throw new IllegalStateException("AI 服務內部錯誤，無法載入模板", e);
         }
 
-        // F. 呼叫 Spring AI 執行檢索與問答 (傳入歷史，並指定當前提問為 .user() 以替換 {query})
-        ChatClient chatClient = chatClientBuilder.build();
-        String assistantReply =
-                chatClient
-                        .prompt()
-                        .messages(springAiMessages)
-                        .user(u -> u.text(userMessage).param("query", userMessage))
-                        .advisors(
-                                new QuestionAnswerAdvisor(
-                                        vectorStore,
-                                        SearchRequest.builder()
-                                                .query(userMessage) // 僅使用當前提問內容進行向量檢索，確保檢索精準度
-                                                .filterExpression(filterExpression)
-                                                .build(),
-                                        promptTemplate))
-                        .call()
-                        .content();
-
-        // G. 儲存 AI 助教的回覆訊息至資料庫
-        AiMessage assistantAiMsg =
-                AiMessage.builder()
-                        .session(session)
-                        .role(AiMessageRole.ASSISTANT)
-                        .content(assistantReply)
-                        .build();
-        aiMessageRepository.save(assistantAiMsg);
-
-        return assistantReply;
+        return new ChatContext(session, springAiMessages, filterExpression, promptTemplate);
     }
+
+    /** 將流式對話最終的完整回覆寫入資料庫 (獨立交易以防止非同步線程異常) */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveAssistantMessage(UUID sessionId, String reply) {
+        if (reply == null || reply.isBlank()) {
+            return;
+        }
+        AiSession session = aiSessionRepository.findById(sessionId).orElse(null);
+        if (session != null) {
+            AiMessage assistantAiMsg =
+                    AiMessage.builder()
+                            .session(session)
+                            .role(AiMessageRole.ASSISTANT)
+                            .content(reply)
+                            .build();
+            aiMessageRepository.save(assistantAiMsg);
+            log.info("RAG 串流對話完整回覆已異步存檔成功: sessionId={}", sessionId);
+        }
+    }
+
+    private record ChatContext(
+            AiSession session,
+            List<Message> springAiMessages,
+            Expression filterExpression,
+            String promptTemplate) {}
 }

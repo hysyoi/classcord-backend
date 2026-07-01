@@ -13,9 +13,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
 
 @RestController
 @RequestMapping("/v1/materials")
@@ -69,5 +72,35 @@ public class AiAssistantController {
             @Valid @RequestBody AiChatRequest request) {
         String answer = aiAssistantService.chatInSession(userId, sessionId, request.message());
         return ResponseEntity.ok(new AiChatResponse(answer));
+    }
+
+    @PostMapping(
+            value = "/chat-sessions/{sessionId}/chat/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+            summary = "會話流式對話",
+            description = "在指定會話中發送新訊息，AI 將以 Server-Sent Events (SSE) 格式逐字返回回答")
+    public SseEmitter chatInSessionStream(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID sessionId,
+            @Valid @RequestBody AiChatRequest request) {
+
+        SseEmitter emitter = new SseEmitter(60000L); // 60 秒逾時
+        Flux<String> replyFlux =
+                aiAssistantService.chatInSessionStream(userId, sessionId, request.message());
+
+        replyFlux.subscribe(
+                chunk -> {
+                    try {
+                        // Emitter.send(Object) 會自動將資料格式化為標準的 "data: <chunk>\n\n"
+                        emitter.send(chunk);
+                    } catch (Exception e) {
+                        // 用戶端斷開連線
+                    }
+                },
+                emitter::completeWithError,
+                emitter::complete);
+
+        return emitter;
     }
 }

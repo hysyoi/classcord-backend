@@ -30,6 +30,8 @@ import com.hys.classcord.server.repository.ServerMemberRepository;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -63,7 +65,7 @@ public class QuizService {
     private final MaterialSlicingStrategy slicingStrategy;
     private final QuizJobManager quizJobManager;
 
-    // 注入 Redis 限流相依性，用於全域精確 RPM 限流
+    // 注入 Redis 限流，用於全域精確 RPM 限流
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
 
@@ -86,6 +88,7 @@ public class QuizService {
                         .orElseThrow(
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
+        // 是否啟用 AI 助教
         if (material.getStatus() != MaterialStatus.ENABLED) {
             throw new QuizException(QuizErrorCode.MATERIAL_NOT_ENABLED);
         }
@@ -131,7 +134,7 @@ public class QuizService {
         return new QuizJobStatusResponse(job.getId(), materialId, JobStatus.PENDING, null);
     }
 
-    /** 背景非同步執行 AI 出題與 SSE 進度推播 (由 RabbitMQ 監聽者調用，整合 Redis Lua 全域滑動窗口限流) */
+    /** 背景非同步執行 AI 出題與 SSE 進度推播 (由 RabbitMQ 監聽者調用，整合 Redis Lua 限流) */
     @Transactional
     public void executeQuizGenerationBackground(
             UUID jobId, UUID materialId, int count, String difficulty) {
@@ -168,40 +171,47 @@ public class QuizService {
 
             // 2. 使用策略抽離：呼叫 SlicingStrategy 取得各分段的文字上下文
             List<String> contexts = slicingStrategy.slice(chunks, count);
-            List<MaterialQuestion> questions = new ArrayList<>();
 
-            // 3. 序列消費，整合 Redis Lua 全域滑動窗口限流，硬性防護 Gemini RPM
-            for (int i = 0; i < count; i++) {
-                log.debug("背景出題進度: {}/{}", i + 1, count);
+            // 3. 併行呼叫 Gemini，利用虛擬執行緒提高吞吐量，極速生成考題
+            List<GeneratedQuestionDto> dtos;
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                List<CompletableFuture<GeneratedQuestionDto>> futures =
+                        contexts.stream()
+                                .map(
+                                        context ->
+                                                CompletableFuture.supplyAsync(
+                                                        () -> {
+                                                            // 發送請求前，向 Redis 爭取全域 Rate Limiter 額度許可
+                                                            acquireGeminiRateLimitPermit(jobId);
+                                                            // 呼叫 Gemini AI
+                                                            return generateSingleQuestion(
+                                                                    context, difficulty);
+                                                        },
+                                                        executor))
+                                .toList();
 
-                // 發送請求前，向 Redis 取全域 Rate Limiter 額度許可
-                acquireGeminiRateLimitPermit(jobId);
-
-                // 呼叫 Gemini 出題 (同步序列執行)
-                GeneratedQuestionDto dto = generateSingleQuestion(contexts.get(i), difficulty);
-                questions.add(
-                        MaterialQuestion.builder()
-                                .material(material)
-                                .type(QuestionType.SINGLE_CHOICE)
-                                .question(dto.question())
-                                .options(dto.options())
-                                .correctAnswer(dto.correctAnswer())
-                                .explanation(dto.explanation())
-                                .isDeleted(false)
-                                .build());
-
-                // 溫和定速保護：每題出題後，微休眠 500ms，讓請求在平滑時間軸上發送
-                if (i < count - 1) {
-                    try {
-                        Thread.sleep(500);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new IllegalStateException("背景出題定速等待被中斷", e);
-                    }
-                }
+                // 等待所有執行緒完成並收集 DTO 結果 (在背景佇列執行緒中阻塞等待)
+                dtos = futures.stream().map(CompletableFuture::join).toList();
             }
 
-            // 4. 批次寫入資料庫
+            // 4. 將生成的 DTO 映射成實體 (在主交易執行緒執行，100% 符合 Hibernate 連線執行緒安全)
+            List<MaterialQuestion> questions =
+                    dtos.stream()
+                            .map(
+                                    dto ->
+                                            MaterialQuestion.builder()
+                                                    .material(material)
+                                                    .type(QuestionType.SINGLE_CHOICE)
+                                                    .question(dto.question())
+                                                    // 防禦性清洗，清除 "A. ", "B. " 前綴，確保資料格式整齊
+                                                    .options(sanitizeOptions(dto.options()))
+                                                    .correctAnswer(dto.correctAnswer())
+                                                    .explanation(dto.explanation())
+                                                    .isDeleted(false)
+                                                    .build())
+                            .toList();
+
+            // 5. 批次寫入資料庫
             materialQuestionRepository.saveAll(questions);
 
             // 5. 交易正常 Commit：更新為 COMPLETED 並推送最後 SSE
@@ -219,7 +229,24 @@ public class QuizService {
         }
     }
 
-    /** 藉由 Redis Lua 腳本取 Gemini API 限流額度的私有方法 (實作最大重試次數) */
+    /** 防禦性清洗：清除選項文字開頭的 A-D/a-d 英文字母標點符號前綴 */
+    private List<String> sanitizeOptions(List<String> rawOptions) {
+        if (rawOptions == null) {
+            return Collections.emptyList();
+        }
+        List<String> clean = new ArrayList<>();
+        for (String opt : rawOptions) {
+            String trimmed = opt.trim();
+            // 匹配 A. B. C. D. 或 A: B: C: D: 等開頭 (不分大小寫，排除空格以防誤判)
+            if (trimmed.matches("^[A-Da-d][.:].*")) {
+                trimmed = trimmed.substring(2).trim();
+            }
+            clean.add(trimmed);
+        }
+        return clean;
+    }
+
+    /** 藉由 Redis Lua 腳本爭取 Gemini API 限流額度的私有方法 (實作最大重試次數) */
     private void acquireGeminiRateLimitPermit(UUID jobId) {
         String redisKey = "RATE_LIMIT:GEMINI_API";
         int maxAttempts = 10; // 最多嘗試 10 次
@@ -235,7 +262,8 @@ public class QuizService {
                             Collections.singletonList(redisKey),
                             String.valueOf(expireSeconds));
 
-            if (count != null && count <= limitPerPeriod) {
+            long currentCount = Optional.ofNullable(count).orElse(0L);
+            if (currentCount <= limitPerPeriod) {
                 // 成功獲取許可，直接返回
                 return;
             }
@@ -285,6 +313,9 @@ public class QuizService {
                         .call()
                         .content();
 
+        if (response == null || response.isBlank()) {
+            throw new IllegalStateException("AI 服務未回傳任何出題內容");
+        }
         return outputConverter.convert(response);
     }
 
