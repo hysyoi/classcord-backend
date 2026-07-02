@@ -225,6 +225,13 @@ public class AiAssistantService {
                                                         saveAssistantMessage(
                                                                 sessionId, fullReply.toString()))
                                         .subscribeOn(Schedulers.boundedElastic())
+                                        .doOnError(
+                                                error ->
+                                                        log.error(
+                                                                "【嚴重警告】AI 對話存檔失敗！會話 ID: {}, 錯誤原因: {}",
+                                                                sessionId,
+                                                                error.getMessage(),
+                                                                error))
                                         .subscribe());
     }
 

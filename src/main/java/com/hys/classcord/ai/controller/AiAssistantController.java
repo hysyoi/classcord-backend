@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
+import org.reactivestreams.Subscription;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -91,25 +92,27 @@ public class AiAssistantController {
         Flux<String> replyFlux =
                 aiAssistantService.chatInSessionStream(userId, sessionId, request.message());
 
-        // 使用 AtomicReference 封裝 Disposable，避免 lambda 中的 forward reference 編譯錯誤
-        AtomicReference<Disposable> subscriptionRef = new AtomicReference<>();
-
+        // 使用 doOnSubscribe 確保在 Flux 發出任何 chunk 之前，subscriptionRef 就已綁定完成
+        // 避免 subscribe() 後才 set() 的競態條件（若 Flux 同步發出第一個 chunk，subscriptionRef 仍為 null）
+        // 注意：doOnSubscribe 傳入的是 org.reactivestreams.Subscription（含 cancel()），非 Disposable
+        AtomicReference<Subscription> subscriptionRef = new AtomicReference<>();
         Disposable subscription =
-                replyFlux.subscribe(
-                        chunk -> {
-                            try {
-                                // Emitter.send(Object) 會自動將資料格式化為標準的 "data: <chunk>\n\n"
-                                emitter.send(chunk);
-                            } catch (Exception e) {
-                                // 用戶端斷開連線，取消訂閱並結束 emitter
-                                Disposable sub = subscriptionRef.get();
-                                if (sub != null) sub.dispose();
-                                emitter.complete();
-                            }
-                        },
-                        emitter::completeWithError,
-                        emitter::complete);
-        subscriptionRef.set(subscription);
+                replyFlux
+                        .doOnSubscribe(subscriptionRef::set)
+                        .subscribe(
+                                chunk -> {
+                                    try {
+                                        // Emitter.send(Object) 會自動將資料格式化為標準的 "data: <chunk>\n\n"
+                                        emitter.send(chunk);
+                                    } catch (Exception e) {
+                                        // 用戶端斷開連線，取消訂閱並結束 emitter
+                                        Subscription sub = subscriptionRef.get();
+                                        if (sub != null) sub.cancel();
+                                        emitter.complete();
+                                    }
+                                },
+                                emitter::completeWithError,
+                                emitter::complete);
 
         // 當 emitter 正常完成、逾時或客戶端主動斷開時，確保取消訂閱以釋放資源
         emitter.onCompletion(subscription::dispose);
