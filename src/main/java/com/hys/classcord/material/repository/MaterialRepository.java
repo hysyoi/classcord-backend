@@ -6,6 +6,7 @@ import jakarta.persistence.QueryHint;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -26,6 +27,10 @@ public interface MaterialRepository extends JpaRepository<Material, UUID> {
     }) // 限制最多等 2 秒
     @Query("SELECT m FROM Material m WHERE m.id = :id")
     Optional<Material> findByIdForUpdate(@Param("id") UUID id);
+
+    // 一次性 JOIN FETCH 教材對應的貼文、頻道、伺服器資訊，用於在事務外讀取 Metadata
+    @EntityGraph(attributePaths = {"message.channel.server"})
+    Optional<Material> findWithAssociationsById(UUID id);
 
     // 批次查詢：傳入多個 messageId，一次性撈出所有對應的教材（用於分頁歷史訊息時）
     List<Material> findByMessageIdIn(List<UUID> messageIds);

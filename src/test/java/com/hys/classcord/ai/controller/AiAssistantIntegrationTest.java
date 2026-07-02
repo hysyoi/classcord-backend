@@ -27,6 +27,7 @@ import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.message.entity.Message;
 import com.hys.classcord.message.repository.MessageRepository;
 import com.hys.classcord.server.entity.Server;
+import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
 import java.util.List;
 import java.util.UUID;
@@ -40,10 +41,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @DirtiesContext
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 public class AiAssistantIntegrationTest extends BaseIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
@@ -57,6 +62,8 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
     @Autowired private AiMessageRepository aiMessageRepository;
     @SpyBean private RabbitTemplate rabbitTemplate;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private ServerMemberRepository serverMemberRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     // 模擬 AI 元件，避免測試時呼叫真實雲端 API 或因缺少 Key 而啟動失敗
     @MockBean VectorStore vectorStore;
@@ -72,6 +79,10 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
         while (rabbitTemplate.receiveAndConvert(RabbitMQConfig.RAG_PROCESS_QUEUE) != null) {
             // 排水：持續讀取直到佇列清空
         }
+
+        // 用 TRUNCATE TABLE ... CASCADE 強制物理清空資料，防止因 messages 軟刪除與外鍵約束造成的刪除失敗
+        jdbcTemplate.execute(
+                "TRUNCATE TABLE ai_messages, ai_sessions, materials, messages, channels, server_members, servers, users CASCADE");
 
         // 1. 建立測試使用者與 Token
         teacher =

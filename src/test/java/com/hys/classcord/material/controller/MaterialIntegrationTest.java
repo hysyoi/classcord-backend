@@ -42,6 +42,8 @@ import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
@@ -157,6 +159,11 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                 .thenReturn(DeleteObjectResponse.builder().build());
         when(s3Client.deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any()))
                 .thenReturn(DeleteObjectResponse.builder().build());
+
+        // 6. Mock S3Client.headObject，模擬 B2 回報的真實檔案大小（與 postRequest 的 fileSize 一致）
+        //    這讓 MaterialService 中的 HeadObject 二階段驗證能正常通過
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentLength(102400L).build());
     }
 
     @Test

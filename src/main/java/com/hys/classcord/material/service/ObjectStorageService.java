@@ -10,6 +10,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
@@ -32,7 +34,6 @@ public class ObjectStorageService {
                         .bucket(properties.getBucketName())
                         .key(fileKey)
                         .contentType(contentType)
-                        .contentLength(fileSize)
                         .build();
 
         PutObjectPresignRequest presignRequest =
@@ -147,6 +148,34 @@ public class ObjectStorageService {
         }
     }
 
+    /**
+     * 向 B2/S3 查詢已上傳檔案的真實大小（只讀取 Metadata，不下載檔案本體）
+     *
+     * @param fileKey 檔案在儲存桶中的唯一鍵
+     * @return 真實檔案大小（bytes）；若檔案不存在（使用者未完成上傳）則回傳 -1
+     */
+    public long getActualObjectSize(String fileKey) {
+        try {
+            return s3Client.headObject(
+                            HeadObjectRequest.builder()
+                                    .bucket(properties.getBucketName())
+                                    .key(fileKey)
+                                    .build())
+                    .contentLength();
+        } catch (NoSuchKeyException e) {
+            return -1L;
+        }
+    }
+
+    /** 刪除儲存桶中的指定檔案（用於清除惡意或過期的臨時上傳物件） */
+    public void deleteObject(String fileKey) {
+        s3Client.deleteObject(
+                DeleteObjectRequest.builder()
+                        .bucket(properties.getBucketName())
+                        .key(fileKey)
+                        .build());
+    }
+
     /** 在 B2/S3 儲存桶內部搬移檔案 */
     public void moveFile(String sourceKey, String destinationKey) {
         // 1. 複製物件
@@ -159,12 +188,7 @@ public class ObjectStorageService {
                         .build();
         s3Client.copyObject(copyRequest);
 
-        // 2. 刪除原臨時物件
-        DeleteObjectRequest deleteRequest =
-                DeleteObjectRequest.builder()
-                        .bucket(properties.getBucketName())
-                        .key(sourceKey)
-                        .build();
-        s3Client.deleteObject(deleteRequest);
+        // 2. 刪除原臨時物件（複用 deleteObject 方法）
+        deleteObject(sourceKey);
     }
 }

@@ -18,7 +18,11 @@ public enum MaterialErrorCode {
     USER_NOT_FOUND("MATERIAL_008", HttpStatus.NOT_FOUND, "找不到該使用者"),
     UPLOAD_FREQUENCY_LIMIT_EXCEEDED("MATERIAL_009", HttpStatus.TOO_MANY_REQUESTS, "上傳過於頻繁，請稍後再試"),
     AI_ASSISTANT_PROCESSING("MATERIAL_010", HttpStatus.CONFLICT, "該教材 AI 助教正在啟用處理中，請勿重複發送"),
-    AI_ASSISTANT_ALREADY_ENABLED("MATERIAL_011", HttpStatus.BAD_REQUEST, "該教材 AI 助教已經啟用完成，可直接進行問答");
+    AI_ASSISTANT_ALREADY_ENABLED("MATERIAL_011", HttpStatus.BAD_REQUEST, "該教材 AI 助教已經啟用完成，可直接進行問答"),
+    UPLOAD_NOT_COMPLETED(
+            "MATERIAL_012", HttpStatus.UNPROCESSABLE_ENTITY, "找不到已上傳的檔案，請確認檔案已上傳完成後再確認發布"),
+    UPLOAD_SIZE_MISMATCH(
+            "MATERIAL_013", HttpStatus.PAYLOAD_TOO_LARGE, "實際上傳大小超過申請大小，疑似惡意上傳，已拒絕並刪除該檔案");
 
     private final String code;
     private final HttpStatus status;

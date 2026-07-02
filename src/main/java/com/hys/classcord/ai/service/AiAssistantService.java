@@ -38,6 +38,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -83,12 +85,26 @@ public class AiAssistantService {
         material.markAsProcessing();
         materialRepository.save(material);
 
-        // 2. 發送 MQ 消息至 RabbitMQ 佇列
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.AI_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
-                materialId.toString());
-        log.info("已成功推送 RAG 處理消息至 RabbitMQ: materialId={}", materialId);
+        // 2. 只有在資料庫交易成功 Commit 後才發送 MQ 消息，防止 Consumer 併發讀到未提交狀態
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            rabbitTemplate.convertAndSend(
+                                    RabbitMQConfig.AI_EXCHANGE,
+                                    RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
+                                    materialId.toString());
+                            log.info("【事務提交後】已成功推送 RAG 處理消息至 RabbitMQ: materialId={}", materialId);
+                        }
+                    });
+        } else {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.AI_EXCHANGE,
+                    RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
+                    materialId.toString());
+            log.info("【無事務環境】已直接推送 RAG 處理消息至 RabbitMQ: materialId={}", materialId);
+        }
     }
 
     /** 1. 創建新的對話會話 */
@@ -296,20 +312,40 @@ public class AiAssistantService {
                 });
     }
 
-    /** 在資料庫交易中執行教材 RAG 切片索引與狀態啟用，防止在 Consumer 進行 slow B2 下載時佔用連線。 */
-    @Transactional
+    /**
+     * 執行教材 RAG 切片索引與狀態啟用。 本方法不帶 @Transactional，以確保慢速的 Tika 解析與 Gemini Embedding 外部 API 調用在交易外部執行，
+     * 防止長時間佔用資料庫連線池與行鎖。
+     */
     public void indexMaterialAndEnable(UUID materialId, byte[] fileBytes) {
+        // 1. 在極短交易中查詢教材及相關聯的 Message -> Channel -> Server 實體 (預防交易外 LazyInitializationException)
         Material material =
-                materialRepository
-                        .findByIdForUpdate(materialId)
-                        .orElseThrow(
-                                () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
+                transactionTemplate.execute(
+                        status ->
+                                materialRepository
+                                        .findWithAssociationsById(materialId)
+                                        .orElseThrow(
+                                                () ->
+                                                        new MaterialException(
+                                                                MaterialErrorCode
+                                                                        .MATERIAL_NOT_FOUND)));
 
+        // 2. 在交易外執行慢速的 RAG 解析與向量化 (包含慢速 CPU 運算與 Gemini API 遠端網路請求)
         RagIndexingStrategy strategy = strategyFactory.getStrategy();
         strategy.processAndIndex(material, fileBytes);
 
-        material.markAsEnabled();
-        materialRepository.save(material);
+        // 3. 在極短交易中利用 Pessimistic Lock (FOR UPDATE) 鎖定教材並更新狀態為 ENABLED
+        transactionTemplate.executeWithoutResult(
+                status -> {
+                    Material dbMaterial =
+                            materialRepository
+                                    .findByIdForUpdate(materialId)
+                                    .orElseThrow(
+                                            () ->
+                                                    new MaterialException(
+                                                            MaterialErrorCode.MATERIAL_NOT_FOUND));
+                    dbMaterial.markAsEnabled();
+                    materialRepository.save(dbMaterial);
+                });
     }
 
     /** 在資料庫交易中將教材標記為啟用失敗。 */

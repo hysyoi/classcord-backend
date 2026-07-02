@@ -43,6 +43,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Slf4j
@@ -124,13 +126,33 @@ public class QuizService {
                         .build();
         job = quizGenerationJobRepository.saveAndFlush(job);
 
-        // 5. 派發非同步訊息至 RabbitMQ 進行處理
+        // 5. 只有在資料庫交易成功 Commit 後才派發訊息至 RabbitMQ，確保背景任務能夠讀取到正確提交的 Job 狀態
         QuizGenerationMessage message =
                 new QuizGenerationMessage(job.getId(), materialId, count, difficulty);
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.QUIZ_EXCHANGE, RabbitMQConfig.ROUTING_KEY_QUIZ_GEN, message);
 
-        log.info("已成功派發異步出題任務到 RabbitMQ: jobId={}, materialId={}", job.getId(), materialId);
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            rabbitTemplate.convertAndSend(
+                                    RabbitMQConfig.QUIZ_EXCHANGE,
+                                    RabbitMQConfig.ROUTING_KEY_QUIZ_GEN,
+                                    message);
+                            log.info(
+                                    "【事務提交後】已成功派發異步出題任務到 RabbitMQ: jobId={}, materialId={}",
+                                    message.jobId(),
+                                    message.materialId());
+                        }
+                    });
+        } else {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.QUIZ_EXCHANGE, RabbitMQConfig.ROUTING_KEY_QUIZ_GEN, message);
+            log.info(
+                    "【無事務環境】已直接派發異步出題任務到 RabbitMQ: jobId={}, materialId={}",
+                    message.jobId(),
+                    message.materialId());
+        }
 
         return new QuizJobStatusResponse(job.getId(), materialId, JobStatus.PENDING, null);
     }

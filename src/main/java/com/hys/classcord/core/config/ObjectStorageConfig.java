@@ -24,8 +24,7 @@ public class ObjectStorageConfig {
                         StaticCredentialsProvider.create(
                                 AwsBasicCredentials.create(
                                         properties.getAccessKey(), properties.getSecretKey())))
-                // Cloudflare R2 不需要區分 Region，但 SDK 要求必須帶一個，此處設 US_EAST_1 即可
-                .region(Region.US_EAST_1)
+                .region(getRegionFromEndpoint(properties.getEndpoint()))
                 .build();
     }
 
@@ -37,7 +36,28 @@ public class ObjectStorageConfig {
                         StaticCredentialsProvider.create(
                                 AwsBasicCredentials.create(
                                         properties.getAccessKey(), properties.getSecretKey())))
-                .region(Region.US_EAST_1)
+                .region(getRegionFromEndpoint(properties.getEndpoint()))
                 .build();
+    }
+
+    private Region getRegionFromEndpoint(String endpoint) {
+        if (endpoint == null) {
+            return Region.US_EAST_1;
+        }
+        try {
+            URI uri = URI.create(endpoint);
+            String host = uri.getHost();
+            if (host == null) {
+                host = endpoint;
+            }
+            // 針對 Backblaze B2 S3 API 端點進行解析，格式例如：s3.us-west-004.backblazeb2.com
+            if (host.startsWith("s3.") && host.contains(".backblazeb2.com")) {
+                String regionStr = host.substring(3, host.indexOf(".backblazeb2.com"));
+                return Region.of(regionStr);
+            }
+        } catch (Exception e) {
+            // 忽略例外，使用預設值
+        }
+        return Region.US_EAST_1;
     }
 }
