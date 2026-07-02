@@ -139,7 +139,7 @@ public class ServerService {
     /** 獲取使用者加入的所有伺服器（Entity 列表） */
     public List<Server> getJoinedServers(UUID userId) {
         List<ServerMember> memberships =
-                serverMemberRepository.findByUserIdWithServerAndOwner(userId);
+                serverMemberRepository.findWithServerAndOwnerByUserId(userId);
         return memberships.stream().map(ServerMember::getServer).toList();
     }
 
@@ -150,6 +150,6 @@ public class ServerService {
             throw new ServerException(ServerErrorCode.NOT_SERVER_MEMBER);
         }
 
-        return serverMemberRepository.findByServerIdWithUser(serverId);
+        return serverMemberRepository.findWithUserByServerId(serverId);
     }
 }

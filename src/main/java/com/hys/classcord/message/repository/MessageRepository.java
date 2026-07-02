@@ -4,18 +4,15 @@ import com.hys.classcord.message.entity.Message;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface MessageRepository extends JpaRepository<Message, UUID> {
 
-    // 使用 JOIN FETCH 一次載入 User 實體，防範對應 MessageUserDto 時產生 N+1 問題
-    // 當使用分頁查詢並搭配 JOIN FETCH 時，必須手動指定 countQuery 以免 Spring Data 無法正確產生計算總數的 SQL
-    @Query(
-            value = "SELECT m FROM Message m JOIN FETCH m.user u WHERE m.channel.id = :channelId",
-            countQuery = "SELECT count(m) FROM Message m WHERE m.channel.id = :channelId")
-    Page<Message> findByChannelId(@Param("channelId") UUID channelId, Pageable pageable);
+    // 使用 EntityGraph 在資料庫分頁的同時，批次 Eager 載入 user，避免 N+1 問題
+    // materials (一對多) 改用 @BatchSize 批次懶載入，避免 Cartesian product 導致記憶體分頁警告
+    @EntityGraph(attributePaths = {"user"})
+    Page<Message> findByChannelId(UUID channelId, Pageable pageable);
 }

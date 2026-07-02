@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class OAuth2AuthService {
@@ -23,6 +23,7 @@ public class OAuth2AuthService {
     private final UserRepository userRepository;
     private final UserIdentityRepository userIdentityRepository;
     private final JwtUtils javaJwtUtils;
+    private final TransactionTemplate transactionTemplate;
     private final Map<AuthProvider, OAuth2Strategy> strategies = new ConcurrentHashMap<>();
 
     // Spring 會自動把所有實作了 OAuth2Strategy 的 Bean 注入進來
@@ -30,17 +31,18 @@ public class OAuth2AuthService {
             UserRepository userRepository,
             UserIdentityRepository userIdentityRepository,
             JwtUtils javaJwtUtils,
+            TransactionTemplate transactionTemplate,
             List<OAuth2Strategy> strategyList) {
 
         this.userRepository = userRepository;
         this.userIdentityRepository = userIdentityRepository;
         this.javaJwtUtils = javaJwtUtils;
+        this.transactionTemplate = transactionTemplate;
 
         // 將策略依據 Provider 分類存入 Map 中
         strategyList.forEach(strategy -> strategies.put(strategy.getProvider(), strategy));
     }
 
-    @Transactional
     public String handleOAuthLogin(AuthProvider provider, String token) {
         // 1. 根據平台動態取得對應的驗證策略
         OAuth2Strategy strategy =
@@ -51,15 +53,17 @@ public class OAuth2AuthService {
                                                 AuthErrorCode.UNSUPPORTED_PROVIDER,
                                                 "未支援的第三方平台: " + provider));
 
-        // 2. 驗證並拿到統一格式的用戶資料
+        // 2. 驗證並拿到統一格式的用戶資料 (慢速第三方 API 網路驗證，在交易外執行以釋放連線)
         OAuthUserInfoDto userInfo = strategy.verifyAndExtractInfo(token);
 
-        // 3. 檢查憑證表，看看該平台的此用戶是否來過
+        // 3. 在短交易中處理登入與註冊寫庫邏輯 (使用 TransactionTemplate 避開 self-invocation 交易失效問題)
         UserIdentity identity =
-                userIdentityRepository
-                        .findByProviderAndProviderUid(
-                                userInfo.provider(), userInfo.providerUserId())
-                        .orElseGet(() -> registerNewOAuthUser(userInfo)); // 沒來過就啟動自動註冊！
+                transactionTemplate.execute(
+                        status ->
+                                userIdentityRepository
+                                        .findByProviderAndProviderUid(
+                                                userInfo.provider(), userInfo.providerUserId())
+                                        .orElseGet(() -> registerNewOAuthUser(userInfo)));
 
         // 4. 發放 Classcord 通行證
         return javaJwtUtils.generateToken(

@@ -48,7 +48,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class QuizService {
 
     private final MaterialRepository materialRepository;
@@ -135,7 +134,6 @@ public class QuizService {
     }
 
     /** 背景非同步執行 AI 出題與 SSE 進度推播 (由 RabbitMQ 監聽者調用，整合 Redis Lua 限流) */
-    @Transactional
     public void executeQuizGenerationBackground(
             UUID jobId, UUID materialId, int count, String difficulty) {
         QuizGenerationJob job = quizGenerationJobRepository.findById(jobId).orElse(null);
@@ -211,13 +209,8 @@ public class QuizService {
                                                     .build())
                             .toList();
 
-            // 5. 批次寫入資料庫
-            materialQuestionRepository.saveAll(questions);
-
-            // 5. 交易正常 Commit：更新為 COMPLETED 並推送最後 SSE
-            job.updateStatus(JobStatus.COMPLETED);
-            ssePushManager.sendStatusUpdate(
-                    jobId, new QuizJobStatusResponse(jobId, materialId, JobStatus.COMPLETED, null));
+            // 5. 委託給 QuizJobManager 在資料庫事務中進行批次寫庫與狀態更新，徹底避免 Gemini 呼叫時佔用連線
+            quizJobManager.saveQuestionsAndCompleteJob(jobId, materialId, questions);
 
             log.info("AI 背景分段出題成功: jobId={}, 共 {} 題已存入題庫", jobId, count);
 
@@ -319,7 +312,8 @@ public class QuizService {
         return outputConverter.convert(response);
     }
 
-    /** 教師/助教：查看教材的題庫列表 (審核用) */
+    /** 教師/助教：查看教材對應的完整題庫 (包含解析與選項) */
+    @Transactional(readOnly = true)
     public List<MaterialQuestionResponse> getMaterialQuestionPool(UUID userId, UUID materialId) {
         Material material =
                 materialRepository
@@ -491,6 +485,7 @@ public class QuizService {
     }
 
     /** 學生/教師：查看單次測驗的評估報告與歷史明細 */
+    @Transactional(readOnly = true)
     public QuizSubmitResponse getQuizReport(UUID userId, UUID quizId) {
         Quiz quiz =
                 quizRepository

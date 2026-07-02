@@ -1,7 +1,6 @@
 package com.hys.classcord.ai.consumer;
 
-import com.hys.classcord.ai.strategy.RagIndexingStrategy;
-import com.hys.classcord.ai.strategy.RagStrategyFactory;
+import com.hys.classcord.ai.service.AiAssistantService;
 import com.hys.classcord.core.config.RabbitMQConfig;
 import com.hys.classcord.material.entity.Material;
 import com.hys.classcord.material.repository.MaterialRepository;
@@ -11,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
@@ -20,22 +18,22 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 public class AiAssistantConsumer {
 
     private final MaterialRepository materialRepository;
-    private final RagStrategyFactory strategyFactory;
+    private final AiAssistantService aiAssistantService;
     private final S3Client s3Client;
     private final String bucketName;
 
     public AiAssistantConsumer(
             MaterialRepository materialRepository,
-            RagStrategyFactory strategyFactory,
+            AiAssistantService aiAssistantService,
             S3Client s3Client,
             @Value("${app.storage.bucket-name}") String bucketName) {
         this.materialRepository = materialRepository;
-        this.strategyFactory = strategyFactory;
+        this.aiAssistantService = aiAssistantService;
         this.s3Client = s3Client;
         this.bucketName = bucketName;
     }
 
-    @Transactional
+    // todo byte[] 過大機制
     @RabbitListener(queues = RabbitMQConfig.RAG_PROCESS_QUEUE)
     public void handleRagProcessingMessage(String materialIdStr) {
         UUID materialId = UUID.fromString(materialIdStr);
@@ -45,18 +43,17 @@ public class AiAssistantConsumer {
         try {
             log.info("【MQ Consumer】收到 RAG 處理消息：從 B2 下載教材... materialId={}", materialId);
 
+            // 1. 在沒有資料庫交易的環境下執行慢速的 B2 下載與重試，不佔用資料庫連線
             byte[] fileBytes = downloadFileFromB2(material.getFileUrl());
-            RagIndexingStrategy strategy = strategyFactory.getStrategy();
-            strategy.processAndIndex(material, fileBytes);
 
-            material.markAsEnabled();
-            materialRepository.save(material);
+            // 2. 委託給 AiAssistantService 在獨立交易中執行索引解析、向量庫寫入與狀態更新
+            aiAssistantService.indexMaterialAndEnable(materialId, fileBytes);
             log.info("【MQ Consumer】AI 助教啟用成功！materialId={}", materialId);
 
         } catch (Exception e) {
             log.error("【MQ Consumer】AI 助教啟用失敗 materialId=" + materialId, e);
-            material.markAsFailed(e.getMessage());
-            materialRepository.save(material);
+            // 3. 委託給 AiAssistantService 在交易中標記為啟用失敗
+            aiAssistantService.markMaterialAsFailed(materialId, e.getMessage());
         }
     }
 

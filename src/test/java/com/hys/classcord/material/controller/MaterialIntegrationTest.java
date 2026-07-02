@@ -233,7 +233,8 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                 UUID.fromString(
                         objectMapper
                                 .readTree(createdMessageJson)
-                                .get("material")
+                                .get("materials")
+                                .get(0)
                                 .get("id")
                                 .asText());
         assertNotNull(messageId);

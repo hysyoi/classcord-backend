@@ -5,6 +5,8 @@ import com.hys.classcord.ai.entity.AiSession;
 import com.hys.classcord.ai.enums.AiMessageRole;
 import com.hys.classcord.ai.repository.AiMessageRepository;
 import com.hys.classcord.ai.repository.AiSessionRepository;
+import com.hys.classcord.ai.strategy.RagIndexingStrategy;
+import com.hys.classcord.ai.strategy.RagStrategyFactory;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.core.config.RabbitMQConfig;
@@ -35,8 +37,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -45,7 +47,6 @@ import reactor.core.scheduler.Schedulers;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class AiAssistantService {
 
     private final MaterialRepository materialRepository;
@@ -55,6 +56,8 @@ public class AiAssistantService {
     private final UserRepository userRepository;
     private final AiSessionRepository aiSessionRepository;
     private final AiMessageRepository aiMessageRepository;
+    private final RagStrategyFactory strategyFactory;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
@@ -113,12 +116,14 @@ public class AiAssistantService {
     }
 
     /** 2. 查詢使用者在某教材下的對話會話列表 */
+    @Transactional(readOnly = true)
     public List<AiSession> listSessions(UUID userId, UUID materialId) {
         return aiSessionRepository.findByUserIdAndMaterialIdOrderByCreatedAtDesc(
                 userId, materialId);
     }
 
     /** 3. 獲取會話中最近 10 條歷史訊息 */
+    @Transactional(readOnly = true)
     public List<AiMessage> getSessionMessages(UUID userId, UUID sessionId) {
         AiSession session =
                 aiSessionRepository
@@ -142,8 +147,8 @@ public class AiAssistantService {
         return chronologicalMessages;
     }
 
+    // todo 問題意圖解析
     /** 4. 在會話中進行連續對話 (載入歷史上下文 + RAG) */
-    @Transactional
     public String chatInSession(UUID userId, UUID sessionId, String userMessage) {
         ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
 
@@ -178,7 +183,6 @@ public class AiAssistantService {
     }
 
     /** 5. 在會話中進行流式連續對話 (載入歷史上下文 + RAG + SSE 吐字) */
-    @Transactional
     public Flux<String> chatInSessionStream(UUID userId, UUID sessionId, String userMessage) {
         ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
 
@@ -214,7 +218,7 @@ public class AiAssistantService {
     private ChatContext prepareChatContext(UUID userId, UUID sessionId, String userMessage) {
         AiSession session =
                 aiSessionRepository
-                        .findById(sessionId)
+                        .findWithUserAndMaterialById(sessionId)
                         .orElseThrow(
                                 () ->
                                         new MaterialException(
@@ -273,22 +277,50 @@ public class AiAssistantService {
         return new ChatContext(session, springAiMessages, filterExpression, promptTemplate);
     }
 
-    /** 將流式對話最終的完整回覆寫入資料庫 (獨立交易以防止非同步線程異常) */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /** 將流式對話最終的完整回覆寫入資料庫 (使用 transactionTemplate 確保非同步線程中事務正常執行，並排除 self-invocation 警告) */
     public void saveAssistantMessage(UUID sessionId, String reply) {
         if (reply == null || reply.isBlank()) {
             return;
         }
-        AiSession session = aiSessionRepository.findById(sessionId).orElse(null);
-        if (session != null) {
-            AiMessage assistantAiMsg =
-                    AiMessage.builder()
-                            .session(session)
-                            .role(AiMessageRole.ASSISTANT)
-                            .content(reply)
-                            .build();
-            aiMessageRepository.save(assistantAiMsg);
-            log.info("RAG 串流對話完整回覆已異步存檔成功: sessionId={}", sessionId);
+        transactionTemplate.executeWithoutResult(
+                status -> {
+                    AiSession session = aiSessionRepository.findById(sessionId).orElse(null);
+                    if (session != null) {
+                        AiMessage assistantAiMsg =
+                                AiMessage.builder()
+                                        .session(session)
+                                        .role(AiMessageRole.ASSISTANT)
+                                        .content(reply)
+                                        .build();
+                        aiMessageRepository.save(assistantAiMsg);
+                        log.info("RAG 串流對話完整回覆已異步存檔成功: sessionId={}", sessionId);
+                    }
+                });
+    }
+
+    /** 在資料庫交易中執行教材 RAG 切片索引與狀態啟用，防止在 Consumer 進行 slow B2 下載時佔用連線。 */
+    @Transactional
+    public void indexMaterialAndEnable(UUID materialId, byte[] fileBytes) {
+        Material material =
+                materialRepository
+                        .findByIdForUpdate(materialId)
+                        .orElseThrow(
+                                () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
+
+        RagIndexingStrategy strategy = strategyFactory.getStrategy();
+        strategy.processAndIndex(material, fileBytes);
+
+        material.markAsEnabled();
+        materialRepository.save(material);
+    }
+
+    /** 在資料庫交易中將教材標記為啟用失敗。 */
+    @Transactional
+    public void markMaterialAsFailed(UUID materialId, String errorMessage) {
+        Material material = materialRepository.findById(materialId).orElse(null);
+        if (material != null) {
+            material.markAsFailed(errorMessage);
+            materialRepository.save(material);
         }
     }
 

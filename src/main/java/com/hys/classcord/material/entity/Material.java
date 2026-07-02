@@ -14,11 +14,10 @@ import lombok.*;
 @Builder
 public class Material extends BaseEntity {
 
-    @OneToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "message_id",
             nullable = false,
-            unique = true,
             foreignKey = @ForeignKey(name = "fk_materials_message"))
     private Message message;
 
