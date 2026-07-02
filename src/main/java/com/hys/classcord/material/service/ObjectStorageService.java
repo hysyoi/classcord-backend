@@ -34,6 +34,7 @@ public class ObjectStorageService {
                         .bucket(properties.getBucketName())
                         .key(fileKey)
                         .contentType(contentType)
+                        .contentLength(fileSize) // 將大小簽入簽章，讓 B2 在儲存桶層直接拒絕超大上傳
                         .build();
 
         PutObjectPresignRequest presignRequest =

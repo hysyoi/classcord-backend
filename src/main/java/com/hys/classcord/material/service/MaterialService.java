@@ -187,19 +187,12 @@ public class MaterialService {
             throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS, "您非該上傳憑證的申請者");
         }
 
-        // === 安全驗證：向 B2 查詢真實上傳大小，防止使用者謊報 fileSize 繞過配額 ===
+        // === 安全驗證：確認使用者真的已完成上傳（防止未上傳就呼叫確認） ===
+        // 注意：超大檔案的防禦由 B2 在儲存桶層透過 Content-Length 簽章原生攔截，此處無需重複驗證大小
         long actualSize = storageService.getActualObjectSize(request.fileKey());
         if (actualSize == -1) {
-            // B2 上找不到此檔案 → 使用者尚未完成上傳就呼叫確認，直接拒絕
             throw new MaterialException(MaterialErrorCode.UPLOAD_NOT_COMPLETED);
         }
-        if (actualSize > fileSize) {
-            // 真實大小超過憑證鎖定的申請大小 → 惡意上傳，刪除超大檔案並拒絕
-            storageService.deleteObject(request.fileKey());
-            throw new MaterialException(MaterialErrorCode.UPLOAD_SIZE_MISMATCH);
-        }
-        // 以 B2 回報的真實大小取代憑證中的申請大小，確保記帳數字 100% 精準
-        long verifiedSize = actualSize;
 
         // 2. 確定目標路徑 (B2 搬移由 RabbitMQ 非同步處理)
         String newFileKey = request.fileKey().replace("temp/", "materials/" + ticketServerId + "/");
@@ -215,7 +208,7 @@ public class MaterialService {
                                                 "找不到該伺服器"));
 
         // 雙重校驗容量限制，防止在申請 URL 到確認發布期間被其他併發上傳塞滿
-        if (server.getUsedStorage() + verifiedSize > properties.getServerQuota()) {
+        if (server.getUsedStorage() + fileSize > properties.getServerQuota()) {
             throw new MaterialException(
                     MaterialErrorCode.SERVER_STORAGE_LIMIT_EXCEEDED, "班級教材儲存空間已滿");
         }
@@ -225,19 +218,19 @@ public class MaterialService {
                 Message.builder().channel(channel).user(user).content(request.content()).build();
         Message savedMessage = messageRepository.save(message);
 
-        // 建立並儲存教材 (使用 B2 回報的真實大小記帳，防止前端謊報 fileSize)
+        // 建立並儲存教材 (使用憑證鎖定的申請大小，實際上傳大小由 B2 Content-Length 簽章強制匹配)
         Material material =
                 Material.builder()
                         .message(savedMessage)
                         .fileUrl(storageService.getPublicFileUrl(newFileKey))
                         .fileType(request.fileType())
                         .originalName(request.originalName())
-                        .fileSize(verifiedSize) // 以 B2 真實大小為準
+                        .fileSize(fileSize)
                         .build();
         Material savedMaterial = materialRepository.save(material);
 
         // 更新班級已用容量
-        server.setUsedStorage(server.getUsedStorage() + verifiedSize);
+        server.setUsedStorage(server.getUsedStorage() + fileSize);
 
         TransactionSynchronizationManager.registerSynchronization(
                 new TransactionSynchronization() {
@@ -249,7 +242,7 @@ public class MaterialService {
                         redisTemplate.execute(
                                 safeIncrScript,
                                 Collections.singletonList("QUOTA:SYSTEM:USED"),
-                                String.valueOf(verifiedSize));
+                                String.valueOf(fileSize));
 
                         // 手動清除 Redis 憑證
                         redisTemplate.delete(ticketKey);
