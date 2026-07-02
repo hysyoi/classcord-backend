@@ -91,3 +91,8 @@ app:
     # 限制額度 (單位：Bytes)
     system-quota: 9126805504   # 8.5 GB
     server-quota: 524288000    # 500 MB
+  # CORS 允許的來源白名單
+  cors:
+    # Local 開發預設：允許本地 localhost 前端（IntelliJ IDEA file:// 會以 null origin 發送請求）
+    # 使用逗號分隔字串，配合 @Value 注入 List<String>
+    allowed-origins: "http://localhost:3000,http://localhost:5173,http://localhost:63342,null"

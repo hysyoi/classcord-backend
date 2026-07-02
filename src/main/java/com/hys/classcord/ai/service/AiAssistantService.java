@@ -43,7 +43,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-// todo 效能
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -52,7 +51,8 @@ public class AiAssistantService {
     private final MaterialRepository materialRepository;
     private final RabbitTemplate rabbitTemplate;
     private final VectorStore vectorStore;
-    private final ChatClient.Builder chatClientBuilder;
+    private final ChatClient chatClient;
+
     private final UserRepository userRepository;
     private final AiSessionRepository aiSessionRepository;
     private final AiMessageRepository aiMessageRepository;
@@ -153,7 +153,6 @@ public class AiAssistantService {
         ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
 
         // F. 呼叫 Spring AI 執行檢索與問答 (傳入歷史，並指定當前提問為 .user() 以替換 {query})
-        ChatClient chatClient = chatClientBuilder.build();
         String assistantReply =
                 chatClient
                         .prompt()
@@ -187,7 +186,6 @@ public class AiAssistantService {
         ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
 
         StringBuilder fullReply = new StringBuilder();
-        ChatClient chatClient = chatClientBuilder.build();
 
         return chatClient
                 .prompt()

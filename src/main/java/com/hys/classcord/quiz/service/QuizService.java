@@ -58,7 +58,9 @@ public class QuizService {
     private final QuizQuestionRepository quizQuestionRepository;
     private final QuizGenerationJobRepository quizGenerationJobRepository;
     private final MaterialChunkRepository materialChunkRepository;
-    private final ChatClient.Builder chatClientBuilder;
+
+    private final ChatClient chatClient;
+
     private final RabbitTemplate rabbitTemplate;
     private final SsePushManager ssePushManager;
     private final MaterialSlicingStrategy slicingStrategy;
@@ -293,7 +295,6 @@ public class QuizService {
             throw new IllegalStateException("無法讀取出題提示詞範本", e);
         }
 
-        ChatClient chatClient = chatClientBuilder.build();
         String response =
                 chatClient
                         .prompt()
@@ -438,7 +439,7 @@ public class QuizService {
             throw new QuizException(QuizErrorCode.QUIZ_ALREADY_SUBMITTED);
         }
 
-        List<QuizQuestion> quizQuestions = quizQuestionRepository.findByQuizId(quizId);
+        List<QuizQuestion> quizQuestions = quizQuestionRepository.findWithQuestionsByQuizId(quizId);
         int correctCount = 0;
         List<QuizQuestionReviewResponse> reviews = new ArrayList<>();
 
@@ -502,7 +503,7 @@ public class QuizService {
             throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "無權訪問此測驗報告");
         }
 
-        List<QuizQuestion> quizQuestions = quizQuestionRepository.findByQuizId(quizId);
+        List<QuizQuestion> quizQuestions = quizQuestionRepository.findWithQuestionsByQuizId(quizId);
         List<QuizQuestionReviewResponse> reviews =
                 quizQuestions.stream()
                         .map(

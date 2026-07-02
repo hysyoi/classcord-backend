@@ -1,5 +1,6 @@
 package com.hys.classcord.ai.config;
 
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -20,5 +21,14 @@ public class GeminiAiConfig {
     @Bean
     public EmbeddingModel embeddingModel(RestClient restClient) {
         return new GeminiEmbeddingModel(restClient, apiKey, modelName);
+    }
+
+    /**
+     * 將 ChatClient 統一 build 一次並交由 Spring 容器管理。 ChatClient 是 Thread-safe 的，可安全共享。 測試環境可直接用 @MockBean
+     * ChatClient 替換此 Bean。
+     */
+    @Bean
+    public ChatClient chatClient(ChatClient.Builder chatClientBuilder) {
+        return chatClientBuilder.build();
     }
 }

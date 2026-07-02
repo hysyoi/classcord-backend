@@ -73,3 +73,5 @@ app:
     public-url: https://mock-public-url.com
     system-quota: 9126805504   # 8.5 GB
     server-quota: 524288000    # 500 MB
+  cors:
+    allowed-origins: "http://localhost:3000"

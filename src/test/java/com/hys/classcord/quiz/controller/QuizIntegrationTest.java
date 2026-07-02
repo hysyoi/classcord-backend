@@ -62,7 +62,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
     @Autowired private QuizService quizService;
     @Autowired private ObjectMapper objectMapper;
 
-    @MockBean private ChatClient.Builder chatClientBuilder;
+    @MockBean private ChatClient chatClient;
 
     private String teacherToken;
     private String studentToken;
@@ -144,13 +144,11 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
     @Test
     void testGenerateQuestions_Success() throws Exception {
         // Mock Spring AI ChatClient 串接，模擬 Gemini 回傳單題的結構化 JSON
-        ChatClient mockChatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec mockRequestSpec =
                 mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec mockCallResponseSpec = mock(ChatClient.CallResponseSpec.class);
 
-        when(chatClientBuilder.build()).thenReturn(mockChatClient);
-        when(mockChatClient.prompt()).thenReturn(mockRequestSpec);
+        when(chatClient.prompt()).thenReturn(mockRequestSpec);
         when(mockRequestSpec.user(
                         org.mockito.ArgumentMatchers
                                 .<java.util.function.Consumer<ChatClient.PromptUserSpec>>any()))

@@ -60,7 +60,7 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
 
     // 模擬 AI 元件，避免測試時呼叫真實雲端 API 或因缺少 Key 而啟動失敗
     @MockBean VectorStore vectorStore;
-    @MockBean private ChatClient.Builder chatClientBuilder;
+    @MockBean private ChatClient chatClient;
 
     private User teacher;
     private String teacherToken;
@@ -202,15 +202,13 @@ public class AiAssistantIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$[0].id").value(sessionId.toString()));
 
         // ==========================================
-        // 4. 模擬連續對話 (Spring AI ChatClient 串接) ➔ 成功 (200 OK)
+        // 4. 模擬連續對話 (Spring AI ChatClient 串接) ➜ 成功 (200 OK)
         // ==========================================
-        ChatClient mockChatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec mockRequestSpec =
                 mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec mockCallResponseSpec = mock(ChatClient.CallResponseSpec.class);
 
-        when(chatClientBuilder.build()).thenReturn(mockChatClient);
-        when(mockChatClient.prompt()).thenReturn(mockRequestSpec);
+        when(chatClient.prompt()).thenReturn(mockRequestSpec);
         when(mockRequestSpec.messages(anyList())).thenReturn(mockRequestSpec);
         when(mockRequestSpec.user(
                         org.mockito.ArgumentMatchers

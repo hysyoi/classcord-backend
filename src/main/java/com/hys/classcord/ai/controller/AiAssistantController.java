@@ -12,12 +12,14 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 @RestController
@@ -89,17 +91,30 @@ public class AiAssistantController {
         Flux<String> replyFlux =
                 aiAssistantService.chatInSessionStream(userId, sessionId, request.message());
 
-        replyFlux.subscribe(
-                chunk -> {
-                    try {
-                        // Emitter.send(Object) 會自動將資料格式化為標準的 "data: <chunk>\n\n"
-                        emitter.send(chunk);
-                    } catch (Exception e) {
-                        // 用戶端斷開連線
-                    }
-                },
-                emitter::completeWithError,
-                emitter::complete);
+        // 使用 AtomicReference 封裝 Disposable，避免 lambda 中的 forward reference 編譯錯誤
+        AtomicReference<Disposable> subscriptionRef = new AtomicReference<>();
+
+        Disposable subscription =
+                replyFlux.subscribe(
+                        chunk -> {
+                            try {
+                                // Emitter.send(Object) 會自動將資料格式化為標準的 "data: <chunk>\n\n"
+                                emitter.send(chunk);
+                            } catch (Exception e) {
+                                // 用戶端斷開連線，取消訂閱並結束 emitter
+                                Disposable sub = subscriptionRef.get();
+                                if (sub != null) sub.dispose();
+                                emitter.complete();
+                            }
+                        },
+                        emitter::completeWithError,
+                        emitter::complete);
+        subscriptionRef.set(subscription);
+
+        // 當 emitter 正常完成、逾時或客戶端主動斷開時，確保取消訂閱以釋放資源
+        emitter.onCompletion(subscription::dispose);
+        emitter.onTimeout(subscription::dispose);
+        emitter.onError(throwable -> subscription.dispose());
 
         return emitter;
     }
