@@ -377,7 +377,7 @@ public class QuizService {
                         .findByIdAndIsDeletedFalse(questionId)
                         .orElseThrow(() -> new QuizException(QuizErrorCode.QUESTION_NOT_FOUND));
 
-        UUID serverId = question.getMaterial().getMessage().getChannel().getServer().getId();
+        UUID serverId = materialQuestionRepository.findServerIdById(questionId);
         ServerMember member =
                 serverMemberRepository
                         .findByServerIdAndUserId(serverId, userId)

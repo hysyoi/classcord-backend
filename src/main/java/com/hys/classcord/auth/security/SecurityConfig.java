@@ -104,6 +104,7 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers("/v1/auth/**")
                                         .permitAll()
+                                        // todo 前端用Polyfill
                                         .requestMatchers("/v1/materials/questions/tasks/*/stream")
                                         .permitAll()
                                         .dispatcherTypeMatchers(
