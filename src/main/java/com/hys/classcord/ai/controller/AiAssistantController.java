@@ -17,8 +17,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 @RestController
@@ -81,42 +79,11 @@ public class AiAssistantController {
     @Operation(
             summary = "會話流式對話",
             description = "在指定會話中發送新訊息，AI 將以 Server-Sent Events (SSE) 格式逐字返回回答")
-    public SseEmitter chatInSessionStream(
+    public Flux<String> chatInSessionStream(
             @AuthenticationPrincipal UUID userId,
             @PathVariable UUID sessionId,
             @Valid @RequestBody AiChatRequest request) {
 
-        SseEmitter emitter = new SseEmitter(60000L); // 60 秒逾時
-        Flux<String> replyFlux =
-                aiAssistantService.chatInSessionStream(userId, sessionId, request.message());
-
-        // 使用 doOnSubscribe 確保在 Flux 發出任何 chunk 之前，subscriptionRef 就已綁定完成
-        // 避免 subscribe() 後才 set() 的競態條件（若 Flux 同步發出第一個 chunk，subscriptionRef 仍為 null）
-        // 注意：doOnSubscribe 傳入的是 org.reactivestreams.Subscription（含 cancel()），非 Disposable
-        // AtomicReference<Subscription> subscriptionRef = new AtomicReference<>();
-        Disposable subscription =
-                replyFlux
-                        // .doOnSubscribe(subscriptionRef::set)
-                        .subscribe(
-                        chunk -> {
-                            try {
-                                // Emitter.send(Object) 會自動將資料格式化為標準的 "data: <chunk>\n\n"
-                                emitter.send(chunk);
-                            } catch (Exception e) {
-                                // 用戶端斷開連線，取消訂閱並結束 emitter
-                                // Subscription sub = subscriptionRef.get();
-                                // if (sub != null) sub.cancel();
-                                emitter.complete();
-                            }
-                        },
-                        emitter::completeWithError,
-                        emitter::complete);
-
-        // 當 emitter 正常完成、逾時或客戶端主動斷開時，確保取消訂閱以釋放資源
-        emitter.onCompletion(subscription::dispose);
-        emitter.onTimeout(subscription::dispose);
-        emitter.onError(throwable -> subscription.dispose());
-
-        return emitter;
+        return aiAssistantService.chatInSessionStream(userId, sessionId, request.message());
     }
 }

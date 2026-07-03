@@ -43,10 +43,13 @@ public class DefaultRagIndexingStrategy implements RagIndexingStrategy {
         String serverId = material.getMessage().getChannel().getServer().getId().toString();
         String channelId = material.getMessage().getChannel().getId().toString();
         String materialId = material.getId().toString();
+        String fileName = material.getOriginalName();
 
         for (int i = 0; i < splitDocuments.size(); i++) {
             Document doc = splitDocuments.get(i);
             Map<String, Object> metadata = doc.getMetadata();
+            // 覆蓋 Spring AI 因為讀取 ByteArrayResource 失敗而寫入的罐頭錯誤字串 "Invalid source URI..."
+            metadata.put("source", fileName);
             metadata.put("server_id", serverId);
             metadata.put("channel_id", channelId);
             metadata.put("material_id", materialId);

@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 @Slf4j
 @RestControllerAdvice
@@ -77,8 +76,8 @@ public class GlobalExceptionHandler {
                                 LocalDateTime.now().toString()));
     }
 
-    @ExceptionHandler(AsyncRequestNotUsableException.class)
-    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
-        log.warn("【連線通知】使用者在 AI 串流結束時已提前離開連線。");
-    }
+    // @ExceptionHandler(AsyncRequestNotUsableException.class)
+    // public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+    //     log.warn("【連線通知】使用者在 AI 串流結束時已提前離開連線。");
+    // }
 }

@@ -515,7 +515,7 @@ public class QuizService {
                         .findById(quizId)
                         .orElseThrow(() -> new QuizException(QuizErrorCode.QUIZ_NOT_FOUND));
 
-        UUID serverId = quiz.getMaterial().getMessage().getChannel().getServer().getId();
+        UUID serverId = quizRepository.findServerIdById(quizId);
         ServerMember member =
                 serverMemberRepository
                         .findByServerIdAndUserId(serverId, userId)

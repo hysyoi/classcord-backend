@@ -163,7 +163,7 @@ public class AiAssistantService {
         return chronologicalMessages;
     }
 
-    // todo 問題意圖解析
+    // todo 問題意圖解析 Function Calling
     /** 4. 在會話中進行連續對話 (載入歷史上下文 + RAG) */
     public String chatInSession(UUID userId, UUID sessionId, String userMessage) {
         ChatContext ctx = prepareChatContext(userId, sessionId, userMessage);
