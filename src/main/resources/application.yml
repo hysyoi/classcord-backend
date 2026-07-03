@@ -48,6 +48,24 @@ spring:
           multiplier: 2.0         # 每次重試加倍等待 (1s -> 2s -> 4s)
           max-interval: 5000ms    # 最長等待 5 秒
 
+  # 5. Spring AI 導向 Google Gemini (使用 OpenAI 相容端點)
+  ai:
+    openai:
+      api-key: ${GEMINI_API_KEY}
+      base-url: https://generativelanguage.googleapis.com/v1beta/openai/
+      chat:
+        options:
+          model: gemini-2.5-flash     # 問答模型
+      embedding:
+        options:
+          model: gemini-embedding-001    # 向量模型：使用 Google 官方 768 維度之 gemini-embedding-001
+#          dimensions: 768
+    # Spring AI 改用 material_chunks 表
+    vectorstore:
+      pgvector:
+        table-name: material_chunks
+        initialize-schema: false # 關閉自動建表，使用手動建的 schema
+
 logging:
   level:
     root: INFO
@@ -74,3 +92,8 @@ app:
     # 限制額度 (單位：Bytes)
     system-quota: 9126805504   # 8.5 GB
     server-quota: 524288000    # 500 MB
+  # CORS 允許的來源白名單
+  cors:
+    # Local 開發預設：允許本地 localhost 前端（IntelliJ IDEA file:// 會以 null origin 發送請求）
+    # 使用逗號分隔字串，配合 @Value 注入 List<String>
+    allowed-origins: "http://localhost:3000,http://localhost:5173,http://localhost:63342,null"

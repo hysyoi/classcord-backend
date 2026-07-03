@@ -10,6 +10,7 @@ import com.hys.classcord.message.entity.Message;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -52,7 +53,7 @@ public class MaterialController {
         Message message = material.getMessage();
         // 3. 組裝並回傳 DTO
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(MessageResponse.fromEntity(message, material));
+                .body(MessageResponse.fromEntity(message, List.of(material)));
     }
 
     @GetMapping("/materials/{materialId}")

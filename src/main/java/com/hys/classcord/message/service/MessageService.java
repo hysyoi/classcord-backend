@@ -122,7 +122,19 @@ public class MessageService {
         int finalSize = Math.min(size, 100);
         Pageable pageable = PageRequest.of(page, finalSize, Sort.by("createdAt").descending());
 
-        return messageRepository.findByChannelId(channelId, pageable);
+        Page<Message> messagesPage = messageRepository.findByChannelId(channelId, pageable);
+
+        // 5. 批次初始化懶載入的 materials 集合 (在 Transaction 事務開啟期間進行)
+        // 由於在 Message 實體的 materials 屬性上定義了 @BatchSize(size = 25)，
+        // 此處對其中一筆資料進行 materials.size() 的調用會引發 Hibernate 用一條 IN 查詢批次加載整頁訊息對應的教材，避免 N+1
+        messagesPage.forEach(
+                msg -> {
+                    if (msg.getMaterials() != null) {
+                        msg.getMaterials().size();
+                    }
+                });
+
+        return messagesPage;
     }
 
     /** 修改訊息內容 */

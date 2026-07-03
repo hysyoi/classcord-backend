@@ -3,8 +3,12 @@ package com.hys.classcord.message.entity;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.channel.entity.Channel;
 import com.hys.classcord.core.entity.AuditableBaseEntity;
+import com.hys.classcord.material.entity.Material;
 import jakarta.persistence.*;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
@@ -45,4 +49,13 @@ public class Message extends AuditableBaseEntity {
     @Builder.Default
     @Column(nullable = false)
     private boolean deleted = false;
+
+    @Builder.Default
+    @BatchSize(size = 25)
+    @OneToMany(
+            mappedBy = "message",
+            fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL,
+            orphanRemoval = true)
+    private List<Material> materials = new ArrayList<>();
 }

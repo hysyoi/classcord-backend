@@ -4,6 +4,8 @@ import com.hys.classcord.material.dto.MaterialResponse;
 import com.hys.classcord.material.entity.Material;
 import com.hys.classcord.message.entity.Message;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
 
@@ -14,22 +16,25 @@ public record MessageResponse(
         MessageUserDto user,
         String content,
         Instant createdAt,
-        MaterialResponse material // 新增：可為空的教材附件回應
+        List<MaterialResponse> materials // 改為複數列表以支援一對多教材附件
         ) {
-    // 保留原有的方法，預設沒有教材
+    // 預設轉換，從實體中讀取載入好的 materials
     public static MessageResponse fromEntity(Message message) {
-        return fromEntity(message, null);
+        return fromEntity(message, message.getMaterials());
     }
 
-    // 新增：重載方法，允許傳入對應的教材實體
-    public static MessageResponse fromEntity(Message message, Material material) {
+    // 重載：由外部直接傳入材料列表，適用於新發布尚未重新查詢的場景
+    public static MessageResponse fromEntity(Message message, List<Material> materials) {
         return MessageResponse.builder()
                 .id(message.getId())
                 .channelId(message.getChannel().getId())
                 .user(MessageUserDto.fromEntity(message.getUser()))
                 .content(message.getContent())
                 .createdAt(message.getCreatedAt())
-                .material(MaterialResponse.fromEntity(material))
+                .materials(
+                        materials != null
+                                ? materials.stream().map(MaterialResponse::fromEntity).toList()
+                                : Collections.emptyList())
                 .build();
     }
 }

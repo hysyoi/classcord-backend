@@ -75,4 +75,9 @@ public class GlobalExceptionHandler {
                                 "timestamp",
                                 LocalDateTime.now().toString()));
     }
+
+    // @ExceptionHandler(AsyncRequestNotUsableException.class)
+    // public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+    //     log.warn("【連線通知】使用者在 AI 串流結束時已提前離開連線。");
+    // }
 }

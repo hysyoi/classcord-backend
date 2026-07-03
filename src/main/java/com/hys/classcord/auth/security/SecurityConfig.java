@@ -5,7 +5,9 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import java.security.SecureRandom;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +19,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -25,6 +30,13 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final RateLimitFilter rateLimitFilter;
+
+    /**
+     * 允許的 CORS 來源白名單，透過 app.cors.allowed-origins 設定。 開發環境可設為 localhost，生產環境務必限縮為正式網域。 yml
+     * 中使用逗號分隔字串，這裡用 SpEL split 轉換為 List。
+     */
+    @Value("#{\"${app.cors.allowed-origins}\".split(\"\\s*,\\s*\")}")
+    private List<String> allowedOrigins;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -77,7 +89,8 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.csrf(AbstractHttpConfigurer::disable)
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(
@@ -91,6 +104,14 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers("/v1/auth/**")
                                         .permitAll()
+                                        // todo 前端用Polyfill
+                                        .requestMatchers("/v1/materials/questions/tasks/*/stream")
+                                        .permitAll()
+                                        .dispatcherTypeMatchers(
+                                                jakarta.servlet.DispatcherType.ASYNC)
+                                        .permitAll()
+                                        .requestMatchers("/error")
+                                        .permitAll()
                                         .anyRequest()
                                         .authenticated());
 
@@ -100,5 +121,19 @@ public class SecurityConfig {
         http.addFilterAt(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        // 使用明確的來源白名單，避免 allowCredentials=true + 萬用字元導致的安全漏洞
+        // 來源由 app.cors.allowed-origins 設定，開發/生產環境透過 yml profile 切換
+        configuration.setAllowedOriginPatterns(allowedOrigins);
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 }

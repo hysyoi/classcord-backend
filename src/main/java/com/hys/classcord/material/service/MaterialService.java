@@ -187,6 +187,13 @@ public class MaterialService {
             throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS, "您非該上傳憑證的申請者");
         }
 
+        // === 安全驗證：確認使用者真的已完成上傳（防止未上傳就呼叫確認） ===
+        // 注意：超大檔案的防禦由 B2 在儲存桶層透過 Content-Length 簽章原生攔截，此處無需重複驗證大小
+        long actualSize = storageService.getActualObjectSize(request.fileKey());
+        if (actualSize == -1) {
+            throw new MaterialException(MaterialErrorCode.UPLOAD_NOT_COMPLETED);
+        }
+
         // 2. 確定目標路徑 (B2 搬移由 RabbitMQ 非同步處理)
         String newFileKey = request.fileKey().replace("temp/", "materials/" + ticketServerId + "/");
 
@@ -211,14 +218,14 @@ public class MaterialService {
                 Message.builder().channel(channel).user(user).content(request.content()).build();
         Message savedMessage = messageRepository.save(message);
 
-        // 建立並儲存教材 (使用憑證鎖定的真實大小，防止前端篡改)
+        // 建立並儲存教材 (使用憑證鎖定的申請大小，實際上傳大小由 B2 Content-Length 簽章強制匹配)
         Material material =
                 Material.builder()
                         .message(savedMessage)
                         .fileUrl(storageService.getPublicFileUrl(newFileKey))
                         .fileType(request.fileType())
                         .originalName(request.originalName())
-                        .fileSize(fileSize) // 鎖定大小，防偽造
+                        .fileSize(fileSize)
                         .build();
         Material savedMaterial = materialRepository.save(material);
 
@@ -260,7 +267,7 @@ public class MaterialService {
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
         // 驗證是否為該班級成員，防止外人取得下載連結
-        UUID serverId = material.getMessage().getChannel().getServer().getId();
+        UUID serverId = materialRepository.findServerIdById(materialId);
         getAndValidateMembership(serverId, userId);
 
         // 提取 fileKey 並計算臨時下載連結 (設定 60 分鐘效期)
