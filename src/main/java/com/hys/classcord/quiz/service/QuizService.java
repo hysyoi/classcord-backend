@@ -97,7 +97,7 @@ public class QuizService {
         }
 
         // 2. 校驗教師/TA 權限
-        UUID serverId = material.getMessage().getChannel().getServer().getId();
+        UUID serverId = materialRepository.findServerIdById(materialId);
         ServerMember member =
                 serverMemberRepository
                         .findByServerIdAndUserId(serverId, userId)
@@ -344,7 +344,7 @@ public class QuizService {
                         .orElseThrow(
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
-        UUID serverId = material.getMessage().getChannel().getServer().getId();
+        UUID serverId = materialRepository.findServerIdById(materialId);
         ServerMember member =
                 serverMemberRepository
                         .findByServerIdAndUserId(serverId, userId)
@@ -400,7 +400,7 @@ public class QuizService {
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
         // 1. 驗證是否為本伺服器成員
-        UUID serverId = material.getMessage().getChannel().getServer().getId();
+        UUID serverId = materialRepository.findServerIdById(materialId);
         if (!serverMemberRepository.existsByServerIdAndUserId(serverId, studentId)) {
             throw new QuizException(QuizErrorCode.NOT_SERVER_MEMBER);
         }

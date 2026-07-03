@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 @Slf4j
 @RestControllerAdvice
@@ -74,5 +75,10 @@ public class GlobalExceptionHandler {
                                 errors, // 將詳細的欄位錯誤（例如: {"email": "必須是格式正確的電子郵件"}）回傳給前端
                                 "timestamp",
                                 LocalDateTime.now().toString()));
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+        log.warn("【連線通知】使用者在 AI 串流結束時已提前離開連線。");
     }
 }

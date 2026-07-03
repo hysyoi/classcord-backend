@@ -219,20 +219,20 @@ public class AiAssistantService {
                 .content()
                 .doOnNext(fullReply::append)
                 .doOnComplete(
-                        () ->
-                                Mono.fromRunnable(
-                                                () ->
-                                                        saveAssistantMessage(
-                                                                sessionId, fullReply.toString()))
-                                        .subscribeOn(Schedulers.boundedElastic())
-                                        .doOnError(
-                                                error ->
-                                                        log.error(
-                                                                "【嚴重警告】AI 對話存檔失敗！會話 ID: {}, 錯誤原因: {}",
-                                                                sessionId,
-                                                                error.getMessage(),
-                                                                error))
-                                        .subscribe());
+                        () -> {
+                            // 非常重要！！保證線程安全
+                            String finalReply = fullReply.toString();
+                            Mono.fromRunnable(() -> saveAssistantMessage(sessionId, finalReply))
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .doOnError(
+                                            error ->
+                                                    log.error(
+                                                            "【嚴重警告】AI 對話存檔失敗！會話 ID: {}, 錯誤原因: {}",
+                                                            sessionId,
+                                                            error.getMessage(),
+                                                            error))
+                                    .subscribe();
+                        });
     }
 
     /** 建立一個內部的共用 ChatContext，用來封裝 RAG 與歷史訊息前置載入邏輯 */
@@ -262,6 +262,7 @@ public class AiAssistantService {
         Collections.reverse(chronologicalHistory);
 
         // B. 儲存當前使用者的提問訊息至資料庫
+        // todo 決定是否要馬上存資料庫（應對使用者中離情境）
         AiMessage userAiMsg =
                 AiMessage.builder()
                         .session(session)

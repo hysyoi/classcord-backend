@@ -109,6 +109,8 @@ public class SecurityConfig {
                                         .dispatcherTypeMatchers(
                                                 jakarta.servlet.DispatcherType.ASYNC)
                                         .permitAll()
+                                        .requestMatchers("/error")
+                                        .permitAll()
                                         .anyRequest()
                                         .authenticated());
 

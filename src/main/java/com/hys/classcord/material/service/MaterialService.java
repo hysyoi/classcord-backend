@@ -267,7 +267,7 @@ public class MaterialService {
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
         // 驗證是否為該班級成員，防止外人取得下載連結
-        UUID serverId = material.getMessage().getChannel().getServer().getId();
+        UUID serverId = materialRepository.findServerIdById(materialId);
         getAndValidateMembership(serverId, userId);
 
         // 提取 fileKey 並計算臨時下載連結 (設定 60 分鐘效期)

@@ -21,6 +21,11 @@ public interface MaterialRepository extends JpaRepository<Material, UUID> {
     // 依據單一 messageId 尋找教材
     Optional<Material> findByMessageId(UUID messageId);
 
+    // 根據 教材Id 尋找 ServerId
+    // todo 考慮用更安全的Optional（但是要寫更多判斷）
+    @Query("SELECT m.message.channel.server.id FROM Material m WHERE m.id = :id")
+    UUID findServerIdById(@Param("id") UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints({
         @QueryHint(name = "jakarta.persistence.lock.timeout", value = "2000")
