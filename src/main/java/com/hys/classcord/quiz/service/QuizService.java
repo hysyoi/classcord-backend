@@ -727,6 +727,7 @@ public class QuizService {
 
         // 2. 檢查快取 (唯讀路徑優化：若不強制重新生成且快取存在，直接讀取快取返回，不應被寫入鎖阻擋)
         String cachedJson = redisTemplate.opsForValue().get(cacheKey);
+        boolean cacheWasNullAtStart = (cachedJson == null);
 
         if (cachedJson != null) {
             if (!regenerate) {
@@ -767,27 +768,27 @@ public class QuizService {
             }
             lockAcquired = true;
 
+            // 5. 檢查 Rate Limit (一天一次)
+            Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
+            if (Boolean.TRUE.equals(isRateLimited)) {
+                throw new QuizException(QuizErrorCode.AI_ANALYSIS_RATE_LIMIT);
+            }
+
             // 雙重檢查鎖 (Double-Checked Locking) 最佳實踐：
             // 當成功取得併發鎖後，再次確認 Redis 快取是否已被前一個執行緒產出並寫入。
-            // 這能完美防範「當鎖因超時被釋放、前一線程寫完快取後，後續線程又重複呼叫 AI」的資源浪費邊界。
-            if (!regenerate) {
+            // 我們僅在「開始請求時無快取」的情況下才防範重複計算，以避免阻礙了 `regenerate=true` 強制重新生成的正常語意。
+            if (cacheWasNullAtStart) {
                 String doubleCheckCache = redisTemplate.opsForValue().get(cacheKey);
                 if (doubleCheckCache != null) {
                     try {
                         ClassDoubtResponse cachedResult =
                                 quizObjectMapper.readValue(
                                         doubleCheckCache, ClassDoubtResponse.class);
-                        return new ClassDoubtResponse(userMessages.size(), cachedResult.themes());
+                        return cachedResult;
                     } catch (Exception e) {
                         log.error("雙重檢查中解析快取失敗，將繼續執行 AI 分析", e);
                     }
                 }
-            }
-
-            // 5. 檢查 Rate Limit (一天一次)
-            Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
-            if (Boolean.TRUE.equals(isRateLimited)) {
-                throw new QuizException(QuizErrorCode.AI_ANALYSIS_RATE_LIMIT);
             }
 
             StringBuilder sb = new StringBuilder();

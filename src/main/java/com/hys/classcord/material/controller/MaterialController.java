@@ -55,7 +55,7 @@ public class MaterialController {
         Material material = materialService.postMaterial(userId, channelId, request);
         // 2. 從教材中取得關聯的貼文
         Message message = material.getMessage();
-        // 3. 組裝回應 DTO
+        // 3. 組裝回應 DTO（已在Service組裝好關聯物件，不會有懶加載問題）
         MessageResponse response = MessageResponse.fromEntity(message, List.of(material));
         // 4. 廣播給訂閱了該班級訊息流的所有客戶端，確保全體在線成員能即時接收新教材
         try {
