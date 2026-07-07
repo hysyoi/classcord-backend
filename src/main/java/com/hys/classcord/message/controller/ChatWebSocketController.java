@@ -51,13 +51,25 @@ public class ChatWebSocketController {
             Message message =
                     messageService.sendMessage(userId, request.channelId(), serviceRequest);
 
+            // 驗證通道確實屬於目的地伺服器，防範伺服器 ID 偽造廣播風險 (WebSocket Spoofing Risk)
+            UUID actualServerId = message.getChannel().getServer().getId();
+            if (!actualServerId.equals(serverId)) {
+                log.warn(
+                        "拒絕跨伺服器 WebSocket 訊息發送嘗試: 請求路徑伺服器={}, 實際通道伺服器={}",
+                        serverId,
+                        actualServerId);
+                return;
+            }
+
             // 2. 轉換為統一的 DTO 回應
             MessageResponse response = MessageResponse.fromEntity(message);
 
-            // 3. 廣播給訂閱了該班級訊息流的所有客戶端
-            messagingTemplate.convertAndSend("/topic/servers/" + serverId + "/messages", response);
+            // 3. 廣播給訂閱了該班級訊息流的所有客戶端 (使用從資料庫查詢出最安全真實的伺服器 ID)
+            messagingTemplate.convertAndSend(
+                    "/topic/servers/" + actualServerId + "/messages", response);
 
         } catch (Exception e) {
+            // todo 發送失敗回傳訊息
             log.error("處理實時聊天訊息發生錯誤：", e);
         }
     }
