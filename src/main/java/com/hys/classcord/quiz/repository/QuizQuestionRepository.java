@@ -1,5 +1,6 @@
 package com.hys.classcord.quiz.repository;
 
+import com.hys.classcord.quiz.dto.LightweightQuizQuestionDto;
 import com.hys.classcord.quiz.entity.QuizQuestion;
 import java.util.List;
 import java.util.UUID;
@@ -23,7 +24,8 @@ public interface QuizQuestionRepository extends JpaRepository<QuizQuestion, UUID
 
     /** 獲取該教材所有已被提交的答題記錄的輕量投影 (僅選取所需欄位，避開 Entity 載入與持久化上下文開銷) */
     @Query(
-            "SELECT q.id, qq.isCorrect, qq.userAnswer FROM QuizQuestion qq JOIN qq.question q WHERE q.material.id = :materialId AND qq.quiz.score IS NOT NULL ORDER BY qq.id DESC")
-    List<Object[]> findLightweightSubmittedQuestionsByMaterialId(
+            "SELECT new com.hys.classcord.quiz.dto.LightweightQuizQuestionDto(q.id, qq.isCorrect, qq.userAnswer) "
+                    + "FROM QuizQuestion qq JOIN qq.question q WHERE q.material.id = :materialId AND qq.quiz.score IS NOT NULL ORDER BY qq.id DESC")
+    List<LightweightQuizQuestionDto> findLightweightSubmittedQuestionsByMaterialId(
             @Param("materialId") UUID materialId, org.springframework.data.domain.Limit limit);
 }

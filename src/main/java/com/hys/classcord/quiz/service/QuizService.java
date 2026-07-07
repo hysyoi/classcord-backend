@@ -640,21 +640,16 @@ public class QuizService {
         List<MaterialQuestion> questions =
                 materialQuestionRepository.findByMaterialIdAndIsDeletedFalse(materialId);
 
-        // 3. 撈取該教材的所有已提交作答記錄 (輕量化投影以防 OOM，限制最多統計最近 10,000 筆答題紀錄)
-        List<Object[]> rawRecords =
+        // 3. 撈取該教材的所有已提交作答記錄 (以 DTO 輕量化投影防範 OOM 與 ClassCastException，限制最多統計最近 10,000 筆答題紀錄)
+        List<LightweightQuizQuestionDto> rawRecords =
                 quizQuestionRepository.findLightweightSubmittedQuestionsByMaterialId(
-                        materialId, org.springframework.data.domain.Limit.of(10000));
+                        materialId, Limit.of(10000));
 
         // 4. 將答題記錄按問題 ID 分組
         Map<UUID, List<LightweightRecord>> qqGroup = new HashMap<>();
-        for (Object[] row : rawRecords) {
-            UUID questionId = (UUID) row[0];
-            Boolean isCorrect = (Boolean) row[1];
-            @SuppressWarnings("unchecked")
-            List<String> userAnswer = (List<String>) row[2];
-
-            qqGroup.computeIfAbsent(questionId, k -> new ArrayList<>())
-                    .add(new LightweightRecord(isCorrect, userAnswer));
+        for (LightweightQuizQuestionDto record : rawRecords) {
+            qqGroup.computeIfAbsent(record.questionId(), k -> new ArrayList<>())
+                    .add(new LightweightRecord(record.isCorrect(), record.userAnswer()));
         }
 
         // 5. 開始統計計算每一題
@@ -713,7 +708,6 @@ public class QuizService {
     }
 
     /** 教師/助教：獲取 AI 班級疑問分析 (彙整最近 50 筆學生向 AI 助教的發問對話) */
-    @Transactional(readOnly = true)
     public ClassDoubtResponse getClassDoubtAnalysis(
             UUID userId, UUID materialId, boolean regenerate) {
         // 1. 驗證權限 (限教師與助教)

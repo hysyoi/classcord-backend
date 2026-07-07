@@ -15,6 +15,7 @@ import com.hys.classcord.material.enums.MaterialErrorCode;
 import com.hys.classcord.material.enums.MaterialStatus;
 import com.hys.classcord.material.exception.MaterialException;
 import com.hys.classcord.material.repository.MaterialRepository;
+import com.hys.classcord.message.dto.MessageResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -375,33 +376,34 @@ public class AiAssistantService {
     }
 
     private void broadcastMaterialUpdate(Material material) {
-        // 解決事務提交前廣播競爭的最佳實踐：若當前有活躍的事務，則註冊同步器，等到 transaction 成功 commit 後才進行 WS 廣播
+        // 1. 於交易與 Hibernate Session 尚存活時，先預先加載 Lazy 屬性並建構 DTO 載荷
+        // 這能徹底防止在事務提交後 (afterCommit) 因為 Session 關閉而拋出 LazyInitializationException
+        com.hys.classcord.message.entity.Message message = material.getMessage();
+        UUID serverId = message.getChannel().getServer().getId();
+        MessageResponse response = MessageResponse.fromEntity(message, List.of(material));
+
+        UUID materialId = material.getId();
+        MaterialStatus status = material.getStatus();
+
+        // 2. 解決事務提交前廣播競爭的最佳實踐：若當前有活躍的事務，則註冊同步器，等到 transaction 成功 commit 後才進行 WS 廣播
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            doBroadcastMaterialUpdate(material);
+                            doBroadcastMaterialUpdate(serverId, response, materialId, status);
                         }
                     });
         } else {
-            doBroadcastMaterialUpdate(material);
+            doBroadcastMaterialUpdate(serverId, response, materialId, status);
         }
     }
 
-    private void doBroadcastMaterialUpdate(Material material) {
+    private void doBroadcastMaterialUpdate(
+            UUID serverId, MessageResponse response, UUID materialId, MaterialStatus status) {
         try {
-            com.hys.classcord.message.entity.Message message = material.getMessage();
-            com.hys.classcord.message.dto.MessageResponse response =
-                    com.hys.classcord.message.dto.MessageResponse.fromEntity(
-                            message, List.of(material));
-            messagingTemplate.convertAndSend(
-                    "/topic/servers/" + message.getChannel().getServer().getId() + "/messages",
-                    response);
-            log.info(
-                    "已透過 WebSocket 廣播教材狀態更新: materialId={}, status={}",
-                    material.getId(),
-                    material.getStatus());
+            messagingTemplate.convertAndSend("/topic/servers/" + serverId + "/messages", response);
+            log.info("已透過 WebSocket 廣播教材狀態更新: materialId={}, status={}", materialId, status);
         } catch (Exception e) {
             log.error("廣播教材狀態更新失敗：", e);
         }
