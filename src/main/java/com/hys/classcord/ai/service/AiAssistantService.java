@@ -375,6 +375,21 @@ public class AiAssistantService {
     }
 
     private void broadcastMaterialUpdate(Material material) {
+        // 解決事務提交前廣播競爭的最佳實踐：若當前有活躍的事務，則註冊同步器，等到 transaction 成功 commit 後才進行 WS 廣播
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            doBroadcastMaterialUpdate(material);
+                        }
+                    });
+        } else {
+            doBroadcastMaterialUpdate(material);
+        }
+    }
+
+    private void doBroadcastMaterialUpdate(Material material) {
         try {
             com.hys.classcord.message.entity.Message message = material.getMessage();
             com.hys.classcord.message.dto.MessageResponse response =

@@ -75,9 +75,9 @@ public class QuizService {
     private final MaterialSlicingStrategy slicingStrategy;
     private final QuizJobManager quizJobManager;
 
-    // 注入 Redis 限流，用於全域精確 RPM 限流
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
+    private final RedisScript<Long> unlockScript;
 
     // 業界最佳實踐：預先配置執行緒安全的 ObjectMapper 以便重複利用
     private final ObjectMapper quizObjectMapper =
@@ -768,17 +768,36 @@ public class QuizService {
         }
 
         boolean lockAcquired = false;
+        String lockValue = java.util.UUID.randomUUID().toString();
         try {
             // 4. 準備重新分析或初次分析：進行原子加鎖 (防併發)
-            // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，防範多執行緒 Race Condition
+            // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，並以隨機 UUID 作為識別碼
             Boolean isLockAcquired =
                     redisTemplate
                             .opsForValue()
-                            .setIfAbsent(lockKey, "true", 5, java.util.concurrent.TimeUnit.MINUTES);
+                            .setIfAbsent(
+                                    lockKey, lockValue, 5, java.util.concurrent.TimeUnit.MINUTES);
             if (!Boolean.TRUE.equals(isLockAcquired)) {
                 throw new QuizException(QuizErrorCode.AI_ANALYSIS_IN_PROGRESS);
             }
             lockAcquired = true;
+
+            // 雙重檢查鎖 (Double-Checked Locking) 最佳實踐：
+            // 當成功取得併發鎖後，再次確認 Redis 快取是否已被前一個執行緒產出並寫入。
+            // 這能完美防範「當鎖因超時被釋放、前一線程寫完快取後，後續線程又重複呼叫 AI」的資源浪費邊界。
+            if (!regenerate) {
+                String doubleCheckCache = redisTemplate.opsForValue().get(cacheKey);
+                if (doubleCheckCache != null) {
+                    try {
+                        ClassDoubtResponse cachedResult =
+                                quizObjectMapper.readValue(
+                                        doubleCheckCache, ClassDoubtResponse.class);
+                        return new ClassDoubtResponse(userMessages.size(), cachedResult.themes());
+                    } catch (Exception e) {
+                        log.error("雙重檢查中解析快取失敗，將繼續執行 AI 分析", e);
+                    }
+                }
+            }
 
             // 5. 檢查 Rate Limit (一天一次)
             Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
@@ -845,9 +864,10 @@ public class QuizService {
             log.error("AI 分析疑問失敗", e);
             throw new QuizException(QuizErrorCode.AI_ANALYSIS_FAILED, "AI 分析失敗：" + e.getMessage());
         } finally {
-            // 解鎖
+            // 解鎖 (使用 Spring Bean 載入之 Lua 腳本進行原子化比對，防止因過期而誤刪他人的鎖)
             if (lockAcquired) {
-                redisTemplate.delete(lockKey);
+                redisTemplate.execute(
+                        unlockScript, java.util.Collections.singletonList(lockKey), lockValue);
             }
         }
     }
