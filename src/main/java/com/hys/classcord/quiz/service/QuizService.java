@@ -760,17 +760,19 @@ public class QuizService {
             }
         }
 
-        // 3. 準備重新分析或初次分析：進行原子加鎖 (防併發)
-        // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，防範多執行緒 Race Condition
-        Boolean isLockAcquired =
-                redisTemplate
-                        .opsForValue()
-                        .setIfAbsent(lockKey, "true", 5, java.util.concurrent.TimeUnit.MINUTES);
-        if (!Boolean.TRUE.equals(isLockAcquired)) {
-            throw new QuizException(QuizErrorCode.AI_ANALYSIS_IN_PROGRESS);
-        }
-
+        boolean lockAcquired = false;
         try {
+            // 3. 準備重新分析或初次分析：進行原子加鎖 (防併發)
+            // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，防範多執行緒 Race Condition
+            Boolean isLockAcquired =
+                    redisTemplate
+                            .opsForValue()
+                            .setIfAbsent(lockKey, "true", 5, java.util.concurrent.TimeUnit.MINUTES);
+            if (!Boolean.TRUE.equals(isLockAcquired)) {
+                throw new QuizException(QuizErrorCode.AI_ANALYSIS_IN_PROGRESS);
+            }
+            lockAcquired = true;
+
             // 4. 檢查 Rate Limit (一天一次)
             Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
             if (Boolean.TRUE.equals(isRateLimited)) {
@@ -851,7 +853,9 @@ public class QuizService {
             throw new QuizException(QuizErrorCode.AI_ANALYSIS_FAILED, "AI 分析失敗：" + e.getMessage());
         } finally {
             // 解鎖
-            redisTemplate.delete(lockKey);
+            if (lockAcquired) {
+                redisTemplate.delete(lockKey);
+            }
         }
     }
 
