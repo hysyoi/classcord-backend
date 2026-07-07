@@ -20,4 +20,10 @@ public interface QuizQuestionRepository extends JpaRepository<QuizQuestion, UUID
     @Query(
             "SELECT qq FROM QuizQuestion qq JOIN FETCH qq.question q WHERE q.material.id = :materialId AND qq.quiz.score IS NOT NULL")
     List<QuizQuestion> findSubmittedQuestionsByMaterialId(@Param("materialId") UUID materialId);
+
+    /** 獲取該教材所有已被提交的答題記錄的輕量投影 (僅選取所需欄位，避開 Entity 載入與持久化上下文開銷) */
+    @Query(
+            "SELECT q.id, qq.isCorrect, qq.userAnswer FROM QuizQuestion qq JOIN qq.question q WHERE q.material.id = :materialId AND qq.quiz.score IS NOT NULL ORDER BY qq.id DESC")
+    List<Object[]> findLightweightSubmittedQuestionsByMaterialId(
+            @Param("materialId") UUID materialId, org.springframework.data.domain.Limit limit);
 }

@@ -316,8 +316,9 @@ public class QuizService {
     private GeneratedQuestionDto generateSingleQuestion(String context, String difficulty) {
         var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
         objectMapper.configure(
-                com.fasterxml.jackson.core.JsonParser.Feature
-                        .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
+                com.fasterxml.jackson.core.json.JsonReadFeature
+                        .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER
+                        .mappedFeature(),
                 true);
         objectMapper.configure(
                 com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
@@ -635,21 +636,27 @@ public class QuizService {
         List<MaterialQuestion> questions =
                 materialQuestionRepository.findByMaterialIdAndIsDeletedFalse(materialId);
 
-        // 3. 撈取該教材的所有已提交作答記錄
-        List<QuizQuestion> quizQuestions =
-                quizQuestionRepository.findSubmittedQuestionsByMaterialId(materialId);
+        // 3. 撈取該教材的所有已提交作答記錄 (輕量化投影以防 OOM，限制最多統計最近 10,000 筆答題紀錄)
+        List<Object[]> rawRecords =
+                quizQuestionRepository.findLightweightSubmittedQuestionsByMaterialId(
+                        materialId, org.springframework.data.domain.Limit.of(10000));
 
         // 4. 將答題記錄按問題 ID 分組
-        Map<UUID, List<QuizQuestion>> qqGroup =
-                quizQuestions.stream()
-                        .collect(
-                                java.util.stream.Collectors.groupingBy(
-                                        qq -> qq.getQuestion().getId()));
+        Map<UUID, List<LightweightRecord>> qqGroup = new HashMap<>();
+        for (Object[] row : rawRecords) {
+            UUID questionId = (UUID) row[0];
+            Boolean isCorrect = (Boolean) row[1];
+            @SuppressWarnings("unchecked")
+            List<String> userAnswer = (List<String>) row[2];
+
+            qqGroup.computeIfAbsent(questionId, k -> new ArrayList<>())
+                    .add(new LightweightRecord(isCorrect, userAnswer));
+        }
 
         // 5. 開始統計計算每一題
         List<ClassWrongQuestionResponse> analysisList = new ArrayList<>();
         for (MaterialQuestion mq : questions) {
-            List<QuizQuestion> history =
+            List<LightweightRecord> history =
                     qqGroup.getOrDefault(mq.getId(), java.util.Collections.emptyList());
             int totalAttempts = history.size();
             int wrongAttempts = 0;
@@ -660,12 +667,12 @@ public class QuizService {
                 optionDistribution.put(opt, 0);
             }
 
-            for (QuizQuestion qq : history) {
-                if (Boolean.FALSE.equals(qq.getIsCorrect())) {
+            for (LightweightRecord qq : history) {
+                if (Boolean.FALSE.equals(qq.isCorrect())) {
                     wrongAttempts++;
                 }
-                if (qq.getUserAnswer() != null) {
-                    for (String ans : qq.getUserAnswer()) {
+                if (qq.userAnswer() != null) {
+                    for (String ans : qq.userAnswer()) {
                         if (ans != null && !ans.isBlank()) {
                             optionDistribution.put(
                                     ans, optionDistribution.getOrDefault(ans, 0) + 1);
@@ -715,12 +722,12 @@ public class QuizService {
             throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "只有教師與助教(TA)可以查看班級分析");
         }
 
+        // 新增快取、鎖、頻率key
         String cacheKey = "doubt_analysis:cache:" + materialId;
         String lockKey = "doubt_analysis:lock:" + materialId;
         String rateLimitKey = "doubt_analysis:rate_limit:" + materialId;
 
-        // 如果 Redis 掛了，這裡會拋出異常，會自動返回 500 錯誤
-        // 2. 檢查是否正在分析中
+        // 2. 檢查是否正在更新分析中 (若是，直接拋出 409 Conflict)
         Boolean isLocked = redisTemplate.hasKey(lockKey);
         if (Boolean.TRUE.equals(isLocked)) {
             throw new QuizException(QuizErrorCode.AI_ANALYSIS_IN_PROGRESS);
@@ -753,21 +760,28 @@ public class QuizService {
             }
         }
 
-        // 4. 若要重新分析 (或無快取)，檢查 Rate Limit (一天一次)
-        Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
-        if (Boolean.TRUE.equals(isRateLimited)) {
-            throw new QuizException(QuizErrorCode.AI_ANALYSIS_RATE_LIMIT);
+        // 3. 準備重新分析或初次分析：進行原子加鎖 (防併發)
+        // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，防範多執行緒 Race Condition
+        Boolean isLockAcquired =
+                redisTemplate
+                        .opsForValue()
+                        .setIfAbsent(lockKey, "true", 5, java.util.concurrent.TimeUnit.MINUTES);
+        if (!Boolean.TRUE.equals(isLockAcquired)) {
+            throw new QuizException(QuizErrorCode.AI_ANALYSIS_IN_PROGRESS);
         }
 
-        // 5. 獲取對話訊息進行分析
-        List<String> userMessages =
-                aiMessageRepository.findUserMessagesByMaterialId(
-                        materialId, org.springframework.data.domain.Limit.of(50));
-
-        // 6. 加鎖 (防併發)
-        redisTemplate.opsForValue().set(lockKey, "true", 5, java.util.concurrent.TimeUnit.MINUTES);
-
         try {
+            // 4. 檢查 Rate Limit (一天一次)
+            Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
+            if (Boolean.TRUE.equals(isRateLimited)) {
+                throw new QuizException(QuizErrorCode.AI_ANALYSIS_RATE_LIMIT);
+            }
+
+            // 5. 獲取對話訊息進行分析
+            List<String> userMessages =
+                    aiMessageRepository.findUserMessagesByMaterialId(
+                            materialId, org.springframework.data.domain.Limit.of(50));
+
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < userMessages.size(); i++) {
                 sb.append(i + 1).append(". ").append(userMessages.get(i)).append("\n");
@@ -777,8 +791,9 @@ public class QuizService {
             // 設定 Spring AI BeanOutputConverter 結構化 JSON 輸出轉換器
             var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
             objectMapper.configure(
-                    com.fasterxml.jackson.core.JsonParser.Feature
-                            .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,
+                    com.fasterxml.jackson.core.json.JsonReadFeature
+                            .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER
+                            .mappedFeature(),
                     true);
             objectMapper.configure(
                     com.fasterxml.jackson.databind.DeserializationFeature
@@ -839,4 +854,6 @@ public class QuizService {
             redisTemplate.delete(lockKey);
         }
     }
+
+    private record LightweightRecord(Boolean isCorrect, List<String> userAnswer) {}
 }
