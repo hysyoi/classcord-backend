@@ -35,9 +35,14 @@ public class AuthenticationService {
     private final ObjectMapper objectMapper;
     private final MailService mailService; // 寄信服務
     private final AppUrlProperties appUrlProperties; // 連結
+    private final TurnstileService turnstileService;
 
     /** 一般帳密註冊（暫存 Redis 階段，不寫入 DB） */
-    public void registerPending(String username, String email, String rawPassword) {
+    public void registerPending(
+            String username, String email, String rawPassword, String turnstileToken) {
+        // 1. 進行 Turnstile 人機驗證
+        turnstileService.verifyToken(turnstileToken, null);
+
         // 一律轉成小寫並去空白
         String normalizedEmail = email.toLowerCase().trim();
 
@@ -265,7 +270,9 @@ public class AuthenticationService {
     // }
 
     /** 一般帳密登入 (驗證成功就發行 JWT 門票) */
-    public String loginLocal(String email, String rawPassword) {
+    public String loginLocal(String email, String rawPassword, String turnstileToken) {
+        // 1. 進行 Turnstile 人機驗證
+        turnstileService.verifyToken(turnstileToken, null);
 
         // 一律轉成小寫
         String normalizedEmail = email.toLowerCase().trim();

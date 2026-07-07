@@ -12,4 +12,9 @@ public record LoginRequest(
 
         // 由於沒有歷史包袱（例如老舊用戶），所以沒必要讓長度不合法的請求進來
         @NotBlank(message = "密碼不可為空") @Size(min = 8, max = 100, message = "密碼長度需介於8~100字元")
-                String password) {}
+                String password,
+        String turnstileToken) {
+    public LoginRequest(String email, String password) {
+        this(email, password, null);
+    }
+}

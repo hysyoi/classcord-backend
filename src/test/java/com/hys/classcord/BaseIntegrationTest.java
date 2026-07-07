@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.turnstile.enabled=false")
 @ActiveProfiles("test") // 載入 application-test.yml 的測試環境設定
 @AutoConfigureMockMvc // 自動配置 MockMvc，用來模擬 HTTP 請求
 @Transactional // 測試結束後自動 Rollback 資料庫，保持測試資料庫乾淨

@@ -36,7 +36,7 @@ public class AuthenticationController {
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {
 
         authenticationService.registerPending(
-                request.username(), request.email(), request.password());
+                request.username(), request.email(), request.password(), request.turnstileToken());
 
         // 202 Accepted 代表已接受請求但尚未真正建立資料庫資源
         return ResponseEntity.accepted().build();
@@ -77,7 +77,9 @@ public class AuthenticationController {
     @Operation(summary = "一般帳密登入", description = "驗證成功就發行 JWT 門票。")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
 
-        String token = authenticationService.loginLocal(request.email(), request.password());
+        String token =
+                authenticationService.loginLocal(
+                        request.email(), request.password(), request.turnstileToken());
 
         return ResponseEntity.ok(new LoginResponse(token));
     }

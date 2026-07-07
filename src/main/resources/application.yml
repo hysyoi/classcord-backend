@@ -74,6 +74,10 @@ logging:
     org.hibernate.orm.jdbc.bind: TRACE # 顯示 SQL 傳入的真實變數數值
 
 app:
+  turnstile:
+    enabled: ${TURNSTILE_ENABLED:true}
+    site-key: ${TURNSTILE_SITE_KEY:1x00000000000000000000AA}
+    secret-key: ${TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA}
   jwt: # 可能也可以抽成一個properties類
     secret-key: ${JWT_SECRET_KEY}
     expiration-ms: 86400000 # 24小時以毫秒計算
