@@ -27,9 +27,11 @@ public class GoogleAuthStrategy implements OAuth2Strategy {
     private final RestClient restClient;
 
     public GoogleAuthStrategy(
-            @Value("${spring.security.oauth2.client.registration.google.client-id}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.google.client-id:mock-google-client-id}")
                     String googleClientId,
-            @Value("${spring.security.oauth2.client.registration.google.client-secret}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.google.client-secret:mock-google-client-secret}")
                     String googleClientSecret,
             @Value("${app.urls.frontend}") String frontendUrl,
             RestClient restClient) {

@@ -23,9 +23,11 @@ public class DiscordAuthStrategy implements OAuth2Strategy {
 
     public DiscordAuthStrategy(
             @Value("${app.urls.frontend}") String frontendUrl,
-            @Value("${spring.security.oauth2.client.registration.discord.client-id}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.discord.client-id:mock-discord-client-id}")
                     String clientId,
-            @Value("${spring.security.oauth2.client.registration.discord.client-secret}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.discord.client-secret:mock-discord-client-secret}")
                     String clientSecret,
             RestClient restClient) {
         this.frontendUrl = frontendUrl;

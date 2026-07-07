@@ -43,6 +43,7 @@ spring:
         registration:
           google:
             client-id: mock-google-client-id
+            client-secret: mock-google-client-secret
           github:
             client-id: mock-github-client-id
             client-secret: mock-github-client-secret
