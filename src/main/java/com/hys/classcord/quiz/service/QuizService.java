@@ -83,14 +83,9 @@ public class QuizService {
     private final ObjectMapper quizObjectMapper =
             new ObjectMapper()
                     .configure(
-                            JsonReadFeature
-                                    .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER
-                                    .mappedFeature(),
+                            JsonReadFeature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER.mappedFeature(),
                             true)
-                    .configure(
-                            DeserializationFeature
-                                    .FAIL_ON_UNKNOWN_PROPERTIES,
-                            false);
+                    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     @Value("classpath:prompts/quiz-single-choice-generation.st")
     private Resource promptResource;

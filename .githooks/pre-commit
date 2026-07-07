@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# 1. 取得所有即將被 Commit (staged) 的 Java 檔案
+STAGED_JAVA_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.java$')
+
+# 如果沒有任何 Java 檔案變更，直接跳過不處理
+if [ -z "$STAGED_JAVA_FILES" ]; then
+    exit 0
+fi
+
+echo "[Git Hook] 偵測到有 Java 檔案變動，正在自動執行 Spotless 排版優化..."
+
+# 2. 執行 Maven Spotless 排版優化
+./mvnw spotless:apply
+
+# 3. 由於排版優化會修改檔案內容，我們需要重新將這些修改 add 回暫存區 (staged)
+# 這樣格式化後的變更才會併入這一次的 Commit 裡
+for file in $STAGED_JAVA_FILES; do
+    if [ -f "$file" ]; then
+        git add "$file"
+    fi
+done
+
+echo "[Git Hook] 排版優化完成，已自動將格式化變更加入此次 Commit 中！"
+exit 0
