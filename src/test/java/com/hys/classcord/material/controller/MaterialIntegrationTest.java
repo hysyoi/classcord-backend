@@ -133,37 +133,46 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                                 .position(1)
                                 .build());
 
-        // 4. Mock S3Presigner 預簽名上傳與下載的行為
+        // 4. Mock S3Presigner 預簽名上傳與下載的行為 (使用 doReturn 確保執行緒安全，防範背景 Consumer 執行緒併發調用導致 Mockito
+        // 狀態混亂)
         PresignedPutObjectRequest mockPresignedPut = mock(PresignedPutObjectRequest.class);
-        when(mockPresignedPut.url())
-                .thenReturn(
+        doReturn(
                         URI.create(
                                         "https://s3.us-west-004.backblazeb2.com/classcord/mock-upload-url")
-                                .toURL());
-        when(s3Presigner.presignPutObject(any(PutObjectPresignRequest.class)))
-                .thenReturn(mockPresignedPut);
+                                .toURL())
+                .when(mockPresignedPut)
+                .url();
+        doReturn(mockPresignedPut)
+                .when(s3Presigner)
+                .presignPutObject(any(PutObjectPresignRequest.class));
 
         PresignedGetObjectRequest mockPresignedGet = mock(PresignedGetObjectRequest.class);
-        when(mockPresignedGet.url())
-                .thenReturn(
+        doReturn(
                         URI.create(
                                         "https://s3.us-west-004.backblazeb2.com/classcord/mock-download-url")
-                                .toURL());
-        when(s3Presigner.presignGetObject(any(GetObjectPresignRequest.class)))
-                .thenReturn(mockPresignedGet);
+                                .toURL())
+                .when(mockPresignedGet)
+                .url();
+        doReturn(mockPresignedGet)
+                .when(s3Presigner)
+                .presignGetObject(any(GetObjectPresignRequest.class));
 
         // 5. Mock S3Client 的 copyObject 與 deleteObject 行為，避免 AWS SDK 執行真實網路連線
-        when(s3Client.copyObject(any(CopyObjectRequest.class)))
-                .thenReturn(CopyObjectResponse.builder().build());
-        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
-                .thenReturn(DeleteObjectResponse.builder().build());
-        when(s3Client.deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any()))
-                .thenReturn(DeleteObjectResponse.builder().build());
+        doReturn(CopyObjectResponse.builder().build())
+                .when(s3Client)
+                .copyObject(any(CopyObjectRequest.class));
+        doReturn(DeleteObjectResponse.builder().build())
+                .when(s3Client)
+                .deleteObject(any(DeleteObjectRequest.class));
+        doReturn(DeleteObjectResponse.builder().build())
+                .when(s3Client)
+                .deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any());
 
         // 6. Mock S3Client.headObject，模擬 B2 回報的真實檔案大小（與 postRequest 的 fileSize 一致）
         //    這讓 MaterialService 中的 HeadObject 二階段驗證能正常通過
-        when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenReturn(HeadObjectResponse.builder().contentLength(102400L).build());
+        doReturn(HeadObjectResponse.builder().contentLength(102400L).build())
+                .when(s3Client)
+                .headObject(any(HeadObjectRequest.class));
     }
 
     @Test

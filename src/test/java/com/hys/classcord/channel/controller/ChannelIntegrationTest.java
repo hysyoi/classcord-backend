@@ -123,15 +123,14 @@ public class ChannelIntegrationTest extends BaseIntegrationTest {
         assertEquals(0, channelRepository.findById(channelId1).get().getPosition());
         assertEquals(1, channelRepository.findById(channelId2).get().getPosition());
 
-        // 建立一個 ADMIN 頻道
-        CreateChannelRequest adminReq =
-                new CreateChannelRequest("Teacher Lounge", ChannelType.ADMIN);
-        mockMvc.perform(
-                        post("/v1/servers/" + serverId + "/channels")
-                                .header("Authorization", teacherToken)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(adminReq)))
-                .andExpect(status().isCreated());
+        // 建立一個 ADMIN 頻道 (藉由 repository 直接寫入以模擬預設的管理頻道，因為 API 已阻擋手動新增 ADMIN 頻道)
+        channelRepository.save(
+                com.hys.classcord.channel.entity.Channel.builder()
+                        .name("Teacher Lounge")
+                        .server(testServer)
+                        .type(ChannelType.ADMIN)
+                        .position(2)
+                        .build());
 
         // 3. 頻道隱私過濾：老師應看到 3 個，學生只應看到 2 個
         String resTeacher =
@@ -174,5 +173,18 @@ public class ChannelIntegrationTest extends BaseIntegrationTest {
                         get("/v1/servers/" + serverId + "/channels")
                                 .header("Authorization", outsiderToken))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void testCannotCreateAdminChannel() throws Exception {
+        UUID serverId = testServer.getId();
+        CreateChannelRequest adminReq =
+                new CreateChannelRequest("Another Admin", ChannelType.ADMIN);
+        mockMvc.perform(
+                        post("/v1/servers/" + serverId + "/channels")
+                                .header("Authorization", teacherToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(adminReq)))
+                .andExpect(status().isBadRequest());
     }
 }

@@ -11,7 +11,8 @@ public enum ChannelErrorCode {
     INSUFFICIENT_PERMISSIONS("CHANNEL_002", HttpStatus.FORBIDDEN, "權限不足，只有教師或助教能管理頻道"),
     NOT_SERVER_MEMBER("CHANNEL_003", HttpStatus.FORBIDDEN, "您非該伺服器的成員，無法存取頻道"),
     // ADMIN_CHANNEL_ACCESS_DENIED("CHANNEL_004", HttpStatus.FORBIDDEN, "此為管理員頻道，學生無法存取"),
-    MAX_CHANNELS_REACHED("CHANNEL_004", HttpStatus.BAD_REQUEST, "該伺服器的頻道數量已達上限 (50個)");
+    MAX_CHANNELS_REACHED("CHANNEL_004", HttpStatus.BAD_REQUEST, "該伺服器的頻道數量已達上限 (50個)"),
+    CANNOT_CREATE_ADMIN_CHANNEL("CHANNEL_005", HttpStatus.BAD_REQUEST, "無法新增管理頻道，每個伺服器僅限一個預設的管理頻道");
 
     private final String code;
     private final HttpStatus status;

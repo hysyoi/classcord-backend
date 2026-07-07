@@ -13,11 +13,14 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/v1")
 @RequiredArgsConstructor
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 public class MaterialController {
 
     private final MaterialService materialService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping("/channels/{channelId}/materials/upload-url")
     @Operation(
@@ -51,9 +55,18 @@ public class MaterialController {
         Material material = materialService.postMaterial(userId, channelId, request);
         // 2. 從教材中取得關聯的貼文
         Message message = material.getMessage();
-        // 3. 組裝並回傳 DTO
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(MessageResponse.fromEntity(message, List.of(material)));
+        // 3. 組裝回應 DTO（已在Service組裝好關聯物件，不會有懶加載問題）
+        MessageResponse response = MessageResponse.fromEntity(message, List.of(material));
+        // 4. 廣播給訂閱了該班級訊息流的所有客戶端，確保全體在線成員能即時接收新教材
+        try {
+            messagingTemplate.convertAndSend(
+                    "/topic/servers/" + message.getChannel().getServer().getId() + "/messages",
+                    response);
+        } catch (Exception e) {
+            log.error("廣播教材貼文訊息失敗：", e);
+        }
+        // 5. 回傳 DTO
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/materials/{materialId}")

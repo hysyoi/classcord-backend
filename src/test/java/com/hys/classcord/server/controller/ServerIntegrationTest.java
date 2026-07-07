@@ -9,6 +9,7 @@ import com.hys.classcord.BaseIntegrationTest;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
+import com.hys.classcord.channel.repository.ChannelRepository;
 import com.hys.classcord.server.dto.CreateServerRequest;
 import com.hys.classcord.server.dto.UpdateServerRequest;
 import com.hys.classcord.server.entity.ServerMember;
@@ -29,6 +30,7 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
     @Autowired private UserRepository userRepository;
     @Autowired private ServerRepository serverRepository;
     @Autowired private ServerMemberRepository serverMemberRepository;
+    @Autowired private ChannelRepository channelRepository;
     @Autowired private ObjectMapper objectMapper;
 
     private User teacher;
@@ -78,6 +80,16 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
                         .orElse(null);
         assertNotNull(ownerMember);
         assertEquals(ServerRole.TEACHER, ownerMember.getRole());
+
+        // 驗證是否自動建立了預設頻道 (討論頻道 + 管理頻道)
+        java.util.List<com.hys.classcord.channel.entity.Channel> channels =
+                channelRepository.findByServerIdOrderByPositionAsc(serverId);
+        assertEquals(2, channels.size());
+        assertEquals("討論頻道", channels.get(0).getName());
+        assertEquals(
+                com.hys.classcord.channel.enums.ChannelType.GENERAL, channels.get(0).getType());
+        assertEquals("管理頻道", channels.get(1).getName());
+        assertEquals(com.hys.classcord.channel.enums.ChannelType.ADMIN, channels.get(1).getType());
 
         // 2. 更改名稱 (學生改 ➔ 403 Forbidden)
         UpdateServerRequest updateReq = new UpdateServerRequest("New Name");

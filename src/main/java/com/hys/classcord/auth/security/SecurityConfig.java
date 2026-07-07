@@ -112,8 +112,23 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers("/error")
                                         .permitAll()
+                                        .requestMatchers("/ws/**")
+                                        .permitAll()
                                         .anyRequest()
                                         .authenticated());
+
+        http.exceptionHandling(
+                exceptions ->
+                        exceptions.authenticationEntryPoint(
+                                (request, response, authException) -> {
+                                    response.setStatus(
+                                            jakarta.servlet.http.HttpServletResponse
+                                                    .SC_UNAUTHORIZED);
+                                    response.setContentType("application/json;charset=UTF-8");
+                                    response.getWriter()
+                                            .write(
+                                                    "{\"code\":\"AUTH_002\",\"message\":\"認證失效，請重新登入\"}");
+                                }));
 
         // 1. 將 rateLimitFilter 放在 UsernamePasswordAuthenticationFilter 之前 (權重較低，先執行)
         http.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class);

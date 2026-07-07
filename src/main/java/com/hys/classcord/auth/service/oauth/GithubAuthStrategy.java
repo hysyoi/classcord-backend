@@ -22,9 +22,11 @@ public class GithubAuthStrategy implements OAuth2Strategy {
     private final RestClient restClient;
 
     public GithubAuthStrategy(
-            @Value("${spring.security.oauth2.client.registration.github.client-id}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.github.client-id:mock-github-client-id}")
                     String clientId,
-            @Value("${spring.security.oauth2.client.registration.github.client-secret}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.github.client-secret:mock-github-client-secret}")
                     String clientSecret,
             RestClient restClient) {
         this.clientId = clientId;

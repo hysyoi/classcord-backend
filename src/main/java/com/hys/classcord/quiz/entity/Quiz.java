@@ -40,10 +40,14 @@ public class Quiz extends BaseEntity {
     private Integer score;
 
     @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     public void updateScore(Integer score) {
         this.score = score;
+    }
+
+    public void updateCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 }

@@ -16,19 +16,21 @@ import org.springframework.web.client.RestClient;
 @Service
 public class DiscordAuthStrategy implements OAuth2Strategy {
 
-    private final String backendUrl;
+    private final String frontendUrl;
     private final String clientId;
     private final String clientSecret;
     private final RestClient restClient;
 
     public DiscordAuthStrategy(
-            @Value("${app.urls.backend}") String backendUrl,
-            @Value("${spring.security.oauth2.client.registration.discord.client-id}")
+            @Value("${app.urls.frontend}") String frontendUrl,
+            @Value(
+                            "${spring.security.oauth2.client.registration.discord.client-id:mock-discord-client-id}")
                     String clientId,
-            @Value("${spring.security.oauth2.client.registration.discord.client-secret}")
+            @Value(
+                            "${spring.security.oauth2.client.registration.discord.client-secret:mock-discord-client-secret}")
                     String clientSecret,
             RestClient restClient) {
-        this.backendUrl = backendUrl;
+        this.frontendUrl = frontendUrl;
         this.clientId = clientId;
         this.clientSecret = clientSecret;
         this.restClient = restClient;
@@ -49,8 +51,8 @@ public class DiscordAuthStrategy implements OAuth2Strategy {
             formData.add("client_secret", clientSecret);
             formData.add("grant_type", "authorization_code");
             formData.add("code", code);
-            // Discord 嚴格校驗：Redirect URI 必須跟後台填的完全一致（全小寫）
-            formData.add("redirect_uri", backendUrl + "/v1/auth/oauth/discord");
+            // Discord 嚴格校驗：Redirect URI 必須與授權請求時使用的完全一致
+            formData.add("redirect_uri", frontendUrl + "/login");
 
             // 階段一：向 Discord 伺服器交換 access_token
             Map<String, Object> tokenResponse =

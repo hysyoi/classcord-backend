@@ -15,6 +15,7 @@ import com.hys.classcord.material.enums.MaterialErrorCode;
 import com.hys.classcord.material.enums.MaterialStatus;
 import com.hys.classcord.material.exception.MaterialException;
 import com.hys.classcord.material.repository.MaterialRepository;
+import com.hys.classcord.message.dto.MessageResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -36,6 +37,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Limit;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -60,6 +62,7 @@ public class AiAssistantService {
     private final AiMessageRepository aiMessageRepository;
     private final RagStrategyFactory strategyFactory;
     private final TransactionTemplate transactionTemplate;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
@@ -352,7 +355,10 @@ public class AiAssistantService {
                                                     new MaterialException(
                                                             MaterialErrorCode.MATERIAL_NOT_FOUND));
                     dbMaterial.markAsEnabled();
-                    materialRepository.save(dbMaterial);
+                    Material saved = materialRepository.save(dbMaterial);
+
+                    // 廣播教材啟用成功狀態給在線使用者
+                    broadcastMaterialUpdate(saved);
                 });
     }
 
@@ -362,7 +368,44 @@ public class AiAssistantService {
         Material material = materialRepository.findById(materialId).orElse(null);
         if (material != null) {
             material.markAsFailed(errorMessage);
-            materialRepository.save(material);
+            Material saved = materialRepository.save(material);
+
+            // 廣播教材啟用失敗狀態給在線使用者
+            broadcastMaterialUpdate(saved);
+        }
+    }
+
+    private void broadcastMaterialUpdate(Material material) {
+        // 1. 於交易與 Hibernate Session 尚存活時，先預先加載 Lazy 屬性並建構 DTO 載荷
+        // 這能徹底防止在事務提交後 (afterCommit) 因為 Session 關閉而拋出 LazyInitializationException
+        com.hys.classcord.message.entity.Message message = material.getMessage();
+        UUID serverId = message.getChannel().getServer().getId();
+        MessageResponse response = MessageResponse.fromEntity(message, List.of(material));
+
+        UUID materialId = material.getId();
+        MaterialStatus status = material.getStatus();
+
+        // 2. 解決事務提交前廣播競爭的最佳實踐：若當前有活躍的事務，則註冊同步器，等到 transaction 成功 commit 後才進行 WS 廣播
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            doBroadcastMaterialUpdate(serverId, response, materialId, status);
+                        }
+                    });
+        } else {
+            doBroadcastMaterialUpdate(serverId, response, materialId, status);
+        }
+    }
+
+    private void doBroadcastMaterialUpdate(
+            UUID serverId, MessageResponse response, UUID materialId, MaterialStatus status) {
+        try {
+            messagingTemplate.convertAndSend("/topic/servers/" + serverId + "/messages", response);
+            log.info("已透過 WebSocket 廣播教材狀態更新: materialId={}, status={}", materialId, status);
+        } catch (Exception e) {
+            log.error("廣播教材狀態更新失敗：", e);
         }
     }
 

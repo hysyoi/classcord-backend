@@ -12,4 +12,9 @@ public record RegisterRequest(
                 @Size(max = 255, message = "Email長度不可超過255字元")
                 String email,
         @NotBlank(message = "密碼不可為空") @Size(min = 8, max = 100, message = "密碼長度需介於 8~100 字元")
-                String password) {}
+                String password,
+        String turnstileToken) {
+    public RegisterRequest(String username, String email, String password) {
+        this(username, email, password, null);
+    }
+}
