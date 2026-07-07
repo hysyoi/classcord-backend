@@ -739,10 +739,7 @@ public class QuizService {
                 try {
                     ClassDoubtResponse cachedResult =
                             quizObjectMapper.readValue(cachedJson, ClassDoubtResponse.class);
-                    List<String> userMessages =
-                            aiMessageRepository.findUserMessagesByMaterialId(
-                                    materialId, org.springframework.data.domain.Limit.of(50));
-                    return new ClassDoubtResponse(userMessages.size(), cachedResult.themes());
+                    return cachedResult;
                 } catch (Exception e) {
                     log.error("解析 Redis 快取失敗，將重新分析", e);
                 }
