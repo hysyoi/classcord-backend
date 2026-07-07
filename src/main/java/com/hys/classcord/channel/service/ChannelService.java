@@ -42,6 +42,10 @@ public class ChannelService {
     public Channel createChannel(UUID userId, UUID serverId, CreateChannelRequest request) {
         checkManagementPermission(serverId, userId);
 
+        if (request.type() == ChannelType.ADMIN) {
+            throw new ChannelException(ChannelErrorCode.CANNOT_CREATE_ADMIN_CHANNEL);
+        }
+
         // 1. 使用悲觀鎖定伺服器記錄，防範並發建立頻道時的 Race Condition
         Server server =
                 serverRepository

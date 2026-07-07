@@ -59,6 +59,14 @@ public class QuizController {
         return ResponseEntity.ok(Map.of("message", "考題刪除成功"));
     }
 
+    @GetMapping("/materials/{materialId}/quizzes")
+    @Operation(summary = "查詢歷史測驗紀錄", description = "學生：查詢該教材自己所有的歷史測驗紀錄列表")
+    public ResponseEntity<List<QuizResponse>> getUserQuizzes(
+            @AuthenticationPrincipal UUID userId, @PathVariable UUID materialId) {
+        var response = quizService.getUserMaterialQuizzes(userId, materialId);
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/materials/{materialId}/quizzes")
     @Operation(summary = "開始測驗", description = "學生：隨機抽取題庫中 10 題建立測驗（隱藏標準答案與解析）")
     public ResponseEntity<QuizResponse> createQuiz(
@@ -82,6 +90,26 @@ public class QuizController {
     public ResponseEntity<QuizSubmitResponse> getQuizReport(
             @AuthenticationPrincipal UUID userId, @PathVariable UUID quizId) {
         var response = quizService.getQuizReport(userId, quizId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/materials/{materialId}/analysis/wrong-questions")
+    @Operation(summary = "獲取班級錯題分析", description = "教師/助教：獲取教材的錯題統計，含答錯次數、錯誤率及選項分佈，由高到低排序")
+    public ResponseEntity<List<ClassWrongQuestionResponse>> getClassWrongQuestionAnalysis(
+            @AuthenticationPrincipal UUID userId, @PathVariable UUID materialId) {
+        var response = quizService.getClassWrongQuestionAnalysis(userId, materialId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/materials/{materialId}/analysis/doubts")
+    @Operation(
+            summary = "獲取班級疑問分析",
+            description = "教師/助教：利用 AI 分析最近 50 筆學生對該教材的提問，過濾日常閒聊並分組生成疑惑主題與建議")
+    public ResponseEntity<ClassDoubtResponse> getClassDoubtAnalysis(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID materialId,
+            @RequestParam(value = "regenerate", defaultValue = "false") boolean regenerate) {
+        var response = quizService.getClassDoubtAnalysis(userId, materialId, regenerate);
         return ResponseEntity.ok(response);
     }
 }

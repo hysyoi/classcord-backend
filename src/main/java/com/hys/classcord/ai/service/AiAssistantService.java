@@ -36,6 +36,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Limit;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -60,6 +61,7 @@ public class AiAssistantService {
     private final AiMessageRepository aiMessageRepository;
     private final RagStrategyFactory strategyFactory;
     private final TransactionTemplate transactionTemplate;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
@@ -352,7 +354,10 @@ public class AiAssistantService {
                                                     new MaterialException(
                                                             MaterialErrorCode.MATERIAL_NOT_FOUND));
                     dbMaterial.markAsEnabled();
-                    materialRepository.save(dbMaterial);
+                    Material saved = materialRepository.save(dbMaterial);
+
+                    // 廣播教材啟用成功狀態給在線使用者
+                    broadcastMaterialUpdate(saved);
                 });
     }
 
@@ -362,7 +367,28 @@ public class AiAssistantService {
         Material material = materialRepository.findById(materialId).orElse(null);
         if (material != null) {
             material.markAsFailed(errorMessage);
-            materialRepository.save(material);
+            Material saved = materialRepository.save(material);
+
+            // 廣播教材啟用失敗狀態給在線使用者
+            broadcastMaterialUpdate(saved);
+        }
+    }
+
+    private void broadcastMaterialUpdate(Material material) {
+        try {
+            com.hys.classcord.message.entity.Message message = material.getMessage();
+            com.hys.classcord.message.dto.MessageResponse response =
+                    com.hys.classcord.message.dto.MessageResponse.fromEntity(
+                            message, List.of(material));
+            messagingTemplate.convertAndSend(
+                    "/topic/servers/" + message.getChannel().getServer().getId() + "/messages",
+                    response);
+            log.info(
+                    "已透過 WebSocket 廣播教材狀態更新: materialId={}, status={}",
+                    material.getId(),
+                    material.getStatus());
+        } catch (Exception e) {
+            log.error("廣播教材狀態更新失敗：", e);
         }
     }
 

@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hys.classcord.BaseIntegrationTest;
 import com.hys.classcord.ai.entity.MaterialChunk;
+import com.hys.classcord.ai.repository.AiMessageRepository;
+import com.hys.classcord.ai.repository.AiSessionRepository;
 import com.hys.classcord.ai.repository.MaterialChunkRepository;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
@@ -61,6 +63,9 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
     @Autowired private QuizQuestionRepository quizQuestionRepository;
     @Autowired private QuizService quizService;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private AiSessionRepository aiSessionRepository;
+    @Autowired private AiMessageRepository aiMessageRepository;
+    @Autowired private org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
 
     @MockBean private ChatClient chatClient;
 
@@ -70,11 +75,19 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        // 清理 Redis 鍵
+        var keys = redisTemplate.keys("doubt_analysis:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+
         // 清理資料庫以防干擾
         quizQuestionRepository.deleteAll();
         quizRepository.deleteAll();
         materialQuestionRepository.deleteAll();
         materialChunkRepository.deleteAll();
+        aiMessageRepository.deleteAll();
+        aiSessionRepository.deleteAll();
 
         // 1. 建立使用者與 Token
         User teacher =
@@ -324,5 +337,228 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/v1/quizzes/" + quizId).header("Authorization", studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.score").value(80));
+    }
+
+    @Test
+    void testGetClassWrongQuestionAnalysis_Success() throws Exception {
+        // 1. 建立 10 個考題以滿足題庫最少數量限制
+        for (int i = 0; i < 10; i++) {
+            materialQuestionRepository.save(
+                    MaterialQuestion.builder()
+                            .material(testMaterial)
+                            .type(QuestionType.SINGLE_CHOICE)
+                            .question("這是第 " + i + " 題 Java 測驗？")
+                            .options(List.of("A. 是", "B. 否", "C. 可能", "D. 不知"))
+                            .correctAnswer(List.of("A"))
+                            .explanation(new QuestionExplanation("解析", Map.of("A", "正確")))
+                            .build());
+        }
+
+        // 2. 學生開始測驗
+        String quizResponseBody =
+                mockMvc.perform(
+                                post("/v1/materials/" + testMaterial.getId() + "/quizzes")
+                                        .header("Authorization", studentToken))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+
+        String quizIdStr = objectMapper.readTree(quizResponseBody).get("id").asText();
+        var questionsNode = objectMapper.readTree(quizResponseBody).get("questions");
+        String materialQuestionIdStr = questionsNode.get(0).get("questionId").asText();
+
+        // 學生提交答案 (第一個填 B 回答錯誤，其餘填 A 回答正確)
+        Map<UUID, List<String>> answers = new HashMap<>();
+        for (int i = 0; i < questionsNode.size(); i++) {
+            String qqIdStr = questionsNode.get(i).get("id").asText();
+            if (i == 0) {
+                answers.put(UUID.fromString(qqIdStr), List.of("B"));
+            } else {
+                answers.put(UUID.fromString(qqIdStr), List.of("A"));
+            }
+        }
+
+        QuizSubmitRequest submitRequest = new QuizSubmitRequest(answers);
+        mockMvc.perform(
+                        post("/v1/quizzes/" + quizIdStr + "/submit")
+                                .header("Authorization", studentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(submitRequest)))
+                .andExpect(status().isOk());
+
+        // 3. 教師查詢班級錯題分析
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/wrong-questions")
+                                .header("Authorization", teacherToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].questionId").value(materialQuestionIdStr))
+                .andExpect(jsonPath("$[0].totalAttempts").value(1))
+                .andExpect(jsonPath("$[0].wrongAttempts").value(1))
+                .andExpect(jsonPath("$[0].errorRate").value(1.0))
+                .andExpect(jsonPath("$[0].optionDistribution.B").value(1));
+
+        // 4. 學生查詢分析應被拒絕 (403 Forbidden)
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/wrong-questions")
+                                .header("Authorization", studentToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void testGetClassDoubtAnalysis_Success() throws Exception {
+        // 1. 建立對話 Session 與使用者發問 Message
+        User student = userRepository.findByEmail("q-student@test.com").orElseThrow();
+        com.hys.classcord.ai.entity.AiSession session =
+                aiSessionRepository.save(
+                        com.hys.classcord.ai.entity.AiSession.builder()
+                                .user(student)
+                                .material(testMaterial)
+                                .build());
+
+        aiMessageRepository.save(
+                com.hys.classcord.ai.entity.AiMessage.builder()
+                        .session(session)
+                        .role(com.hys.classcord.ai.enums.AiMessageRole.USER)
+                        .content("為什麼遞迴會StackOverflow？")
+                        .build());
+
+        // 2. Mock Spring AI ChatClient
+        ChatClient.ChatClientRequestSpec mockRequestSpec =
+                mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec mockCallResponseSpec = mock(ChatClient.CallResponseSpec.class);
+
+        when(chatClient.prompt()).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.user(
+                        org.mockito.ArgumentMatchers
+                                .<java.util.function.Consumer<ChatClient.PromptUserSpec>>any()))
+                .thenReturn(mockRequestSpec);
+        when(mockRequestSpec.call()).thenReturn(mockCallResponseSpec);
+
+        String mockAiJsonResponse =
+                """
+                {
+                  "totalQuestionsAnalyzed": 1,
+                  "themes": [
+                    {
+                      "themeName": "遞迴終止條件",
+                      "description": "學生不知道如何停止遞迴",
+                      "questions": [
+                        "為什麼遞迴會StackOverflow？"
+                      ],
+                      "recommendation": "建議上課時強調終止條件"
+                    }
+                  ]
+                }
+                """;
+        when(mockCallResponseSpec.content()).thenReturn(mockAiJsonResponse);
+
+        // 3. 教師查詢疑問分析 (需帶 regenerate=true 才會在無快取時觸發 AI 分析)
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", teacherToken)
+                                .param("regenerate", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalQuestionsAnalyzed").value(1))
+                .andExpect(jsonPath("$.themes[0].themeName").value("遞迴終止條件"))
+                .andExpect(jsonPath("$.themes[0].description").value("學生不知道如何停止遞迴"));
+
+        // 4. 學生查詢疑問分析應被拒絕 (403 Forbidden)
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", studentToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void testGetClassDoubtAnalysis_RedisLockAndRateLimit() throws Exception {
+        // 1. 建立對話 Session 與發問
+        User student = userRepository.findByEmail("q-student@test.com").orElseThrow();
+        com.hys.classcord.ai.entity.AiSession session =
+                aiSessionRepository.save(
+                        com.hys.classcord.ai.entity.AiSession.builder()
+                                .user(student)
+                                .material(testMaterial)
+                                .build());
+        aiMessageRepository.save(
+                com.hys.classcord.ai.entity.AiMessage.builder()
+                        .session(session)
+                        .role(com.hys.classcord.ai.enums.AiMessageRole.USER)
+                        .content("為什麼需要 Java 虛擬機 JVM 呢？")
+                        .build());
+
+        // Mock ChatClient
+        ChatClient.ChatClientRequestSpec mockRequestSpec =
+                mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec mockCallResponseSpec = mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(mockRequestSpec);
+        when(mockRequestSpec.user(
+                        org.mockito.ArgumentMatchers
+                                .<java.util.function.Consumer<ChatClient.PromptUserSpec>>any()))
+                .thenReturn(mockRequestSpec);
+        when(mockRequestSpec.call()).thenReturn(mockCallResponseSpec);
+
+        String mockAiJsonResponse =
+                """
+                {
+                  "totalQuestionsAnalyzed": 1,
+                  "themes": [
+                    {
+                      "themeName": "JVM概念",
+                      "description": "學生不懂JVM原理",
+                      "questions": ["為什麼需要 Java 虛擬機 JVM 呢？"],
+                      "recommendation": "多介紹JVM位元組碼的編譯流程"
+                    }
+                  ]
+                }
+                """;
+        when(mockCallResponseSpec.content()).thenReturn(mockAiJsonResponse);
+
+        // A. 第一次嘗試請求 (regenerate=false)：此時無快取，應回傳 404 Not Found (不自動觸發 AI)
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", teacherToken))
+                .andExpect(status().isNotFound());
+
+        // B. 教師點擊「分析」(regenerate=true)：進行 AI 分析並寫入快取與限流 (200 OK)
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", teacherToken)
+                                .param("regenerate", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.themes[0].themeName").value("JVM概念"));
+
+        // 驗證 Redis 中寫入了 cache 與 rate_limit
+        org.junit.jupiter.api.Assertions.assertTrue(
+                redisTemplate.hasKey("doubt_analysis:cache:" + testMaterial.getId()));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                redisTemplate.hasKey("doubt_analysis:rate_limit:" + testMaterial.getId()));
+
+        // B. 第二次請求 (regenerate=false)：直接讀取快取，不應再次呼叫 ChatClient
+        String newMockResponse = "{}";
+        when(mockCallResponseSpec.content()).thenReturn(newMockResponse);
+
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", teacherToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.themes[0].themeName").value("JVM概念"));
+
+        // C. 第三次請求 (regenerate=true)：欲重新分析，但因為 24 小時限流未過，應返回 429 Too Many Requests
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", teacherToken)
+                                .param("regenerate", "true"))
+                .andExpect(status().isTooManyRequests());
+
+        // D. 驗證併發鎖定：手動在 Redis 中設定鎖，請求應該直接返回 409 Conflict
+        redisTemplate.opsForValue().set("doubt_analysis:lock:" + testMaterial.getId(), "true");
+        mockMvc.perform(
+                        get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
+                                .header("Authorization", teacherToken))
+                .andExpect(status().isConflict());
+
+        // 清理鎖
+        redisTemplate.delete("doubt_analysis:lock:" + testMaterial.getId());
     }
 }

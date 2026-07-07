@@ -13,6 +13,9 @@
    - `general` (字串)：題目的綜合解析。
    - `options` (JSON 物件/Map)：格式必須是鍵值對（Key-Value），其中鍵（Key）為大寫的 "A", "B", "C", "D"，值（Value）為該選項的詳細解析與說明。請「絕對不要」將 options 寫成陣列（Array/`[]`）格式。
 6. 難易度設定為：{difficulty}。
+7. 【嚴格 JSON 格式與轉義規範】：
+   - 請「絕對不要」在 JSON 字串的值中，對底線 `_` 或星號 `*` 等非 JSON 規定特殊字元進行反斜線轉義（例如：請直接輸出 "my_variable" 而非 "my\_variable"；若需使用 Markdown 強調，請直接輸出 "*重點*" 或 "**重點**" 而非 "\*重點\*" 或 "\*\*重點\*\*風格"）。
+   - 請「嚴格且僅」輸出 {format_spec} 中定義的屬性（question, options, correctAnswer, explanation），「絕對不要」額外輸出如 difficulty, type 等自訂屬性。
 
 {format_spec}
 

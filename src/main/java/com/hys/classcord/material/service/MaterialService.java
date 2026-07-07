@@ -270,11 +270,25 @@ public class MaterialService {
         UUID serverId = materialRepository.findServerIdById(materialId);
         getAndValidateMembership(serverId, userId);
 
-        // 提取 fileKey 並計算臨時下載連結 (設定 60 分鐘效期)
-        String fileKey = storageService.extractFileKey(material.getFileUrl());
-        String temporaryDownloadUrl =
-                storageService.generatePresignedDownloadUrl(
-                        fileKey, 60, material.getOriginalName());
+        // 嘗試從 Redis 快取讀取臨時網址 (快取期限與臨時下載網址效期保持一致，為 50 分鐘)
+        String redisKey = "MATERIAL:DOWNLOAD_URL:" + materialId;
+        String temporaryDownloadUrl = redisTemplate.opsForValue().get(redisKey);
+
+        if (temporaryDownloadUrl == null) {
+            // 提取 fileKey 並計算臨時下載連結 (設定 60 分鐘效期)
+            String fileKey = storageService.extractFileKey(material.getFileUrl());
+            temporaryDownloadUrl =
+                    storageService.generatePresignedDownloadUrl(
+                            fileKey, 60, material.getOriginalName());
+
+            // 寫入 Redis 快取，有效期 50 分鐘 (與前端快取一致，安全期 10 分鐘)
+            redisTemplate
+                    .opsForValue()
+                    .set(redisKey, temporaryDownloadUrl, 50, java.util.concurrent.TimeUnit.MINUTES);
+            log.info("生成新的臨時下載連結並寫入 Redis 快取，教材 ID: {}", materialId);
+        } else {
+            log.info("從 Redis 快取命中教材臨時下載連結，教材 ID: {}", materialId);
+        }
 
         // 為了不弄髒資料庫中的實體，返回一個設定了臨時網址的複本
         Material copy =

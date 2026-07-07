@@ -56,18 +56,17 @@ public class OAuth2AuthService {
         // 2. 驗證並拿到統一格式的用戶資料 (慢速第三方 API 網路驗證，在交易外執行以釋放連線)
         OAuthUserInfoDto userInfo = strategy.verifyAndExtractInfo(token);
 
-        // 3. 在短交易中處理登入與註冊寫庫邏輯 (使用 TransactionTemplate 避開 self-invocation 交易失效問題)
-        UserIdentity identity =
-                transactionTemplate.execute(
-                        status ->
-                                userIdentityRepository
-                                        .findByProviderAndProviderUid(
-                                                userInfo.provider(), userInfo.providerUserId())
-                                        .orElseGet(() -> registerNewOAuthUser(userInfo)));
-
-        // 4. 發放 Classcord 通行證
-        return javaJwtUtils.generateToken(
-                identity.getUser().getId(), identity.getUser().getEmail());
+        // 3. 在短交易中處理登入與註冊寫庫邏輯，並直接在交易內取得需要的欄位以避開 LazyInitializationException
+        return transactionTemplate.execute(
+                status -> {
+                    UserIdentity identity =
+                            userIdentityRepository
+                                    .findByProviderAndProviderUid(
+                                            userInfo.provider(), userInfo.providerUserId())
+                                    .orElseGet(() -> registerNewOAuthUser(userInfo));
+                    return javaJwtUtils.generateToken(
+                            identity.getUser().getId(), identity.getUser().getEmail());
+                });
     }
 
     private UserIdentity registerNewOAuthUser(OAuthUserInfoDto userInfo) {

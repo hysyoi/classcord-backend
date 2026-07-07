@@ -2,6 +2,9 @@ package com.hys.classcord.server.service;
 
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
+import com.hys.classcord.channel.entity.Channel;
+import com.hys.classcord.channel.enums.ChannelType;
+import com.hys.classcord.channel.repository.ChannelRepository;
 import com.hys.classcord.server.dto.CreateServerRequest;
 import com.hys.classcord.server.dto.UpdateServerRequest;
 import com.hys.classcord.server.entity.Server;
@@ -29,6 +32,7 @@ public class ServerService {
     private final ServerRepository serverRepository;
     private final ServerMemberRepository serverMemberRepository;
     private final UserRepository userRepository;
+    private final ChannelRepository channelRepository;
 
     // todo 硬編碼
     // 每人最大創建班級數
@@ -58,6 +62,26 @@ public class ServerService {
         ServerMember member =
                 ServerMember.builder().server(server).user(owner).role(ServerRole.TEACHER).build();
         serverMemberRepository.save(member);
+
+        // 5. 建立預設頻道：討論頻道 (GENERAL) + 管理頻道 (ADMIN)
+        Channel discussionChannel =
+                Channel.builder()
+                        .server(server)
+                        .name("討論頻道")
+                        .type(ChannelType.GENERAL)
+                        .position(0)
+                        .build();
+        channelRepository.save(discussionChannel);
+
+        Channel adminChannel =
+                Channel.builder()
+                        .server(server)
+                        .name("管理頻道")
+                        .type(ChannelType.ADMIN)
+                        .position(1)
+                        .build();
+        channelRepository.save(adminChannel);
+
         return server;
     }
 
