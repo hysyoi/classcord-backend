@@ -45,6 +45,7 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -730,13 +731,7 @@ public class QuizService {
         String lockKey = "doubt_analysis:lock:" + materialId;
         String rateLimitKey = "doubt_analysis:rate_limit:" + materialId;
 
-        // 2. 檢查是否正在更新分析中 (若是，直接拋出 409 Conflict)
-        Boolean isLocked = redisTemplate.hasKey(lockKey);
-        if (Boolean.TRUE.equals(isLocked)) {
-            throw new QuizException(QuizErrorCode.AI_ANALYSIS_IN_PROGRESS);
-        }
-
-        // 3. 檢查快取
+        // 2. 檢查快取 (唯讀路徑優化：若不強制重新生成且快取存在，直接讀取快取返回，不應被寫入鎖阻擋)
         String cachedJson = redisTemplate.opsForValue().get(cacheKey);
 
         if (cachedJson != null) {
@@ -758,13 +753,12 @@ public class QuizService {
             }
         }
 
-        // 💡 效能與資源保護：在加鎖與呼叫 AI 前，先拉取與檢查學生的提問紀錄。
+        // 效能與資源保護：在加鎖與呼叫 AI 前，先拉取與檢查學生的提問紀錄。
         // 若學生無任何提問紀錄，則直接回傳空主題，避免浪費 AI Token 或引發併發鎖與頻率限制開銷。
         List<String> userMessages =
-                aiMessageRepository.findUserMessagesByMaterialId(
-                        materialId, org.springframework.data.domain.Limit.of(50));
+                aiMessageRepository.findUserMessagesByMaterialId(materialId, Limit.of(50));
         if (userMessages.isEmpty()) {
-            return new ClassDoubtResponse(0, java.util.Collections.emptyList());
+            return new ClassDoubtResponse(0, Collections.emptyList());
         }
 
         boolean lockAcquired = false;

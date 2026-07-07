@@ -551,11 +551,12 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                                 .param("regenerate", "true"))
                 .andExpect(status().isTooManyRequests());
 
-        // D. 驗證併發鎖定：手動在 Redis 中設定鎖，請求應該直接返回 409 Conflict
+        // D. 驗證併發鎖定：手動在 Redis 中設定鎖，以 regenerate=true 請求應直接返回 409 Conflict
         redisTemplate.opsForValue().set("doubt_analysis:lock:" + testMaterial.getId(), "true");
         mockMvc.perform(
                         get("/v1/materials/" + testMaterial.getId() + "/analysis/doubts")
-                                .header("Authorization", teacherToken))
+                                .header("Authorization", teacherToken)
+                                .param("regenerate", "true"))
                 .andExpect(status().isConflict());
 
         // 清理鎖
