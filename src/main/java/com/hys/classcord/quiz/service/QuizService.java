@@ -1,5 +1,8 @@
 package com.hys.classcord.quiz.service;
 
+import com.fasterxml.jackson.core.json.JsonReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hys.classcord.ai.entity.MaterialChunk;
 import com.hys.classcord.ai.repository.AiMessageRepository;
 import com.hys.classcord.ai.repository.MaterialChunkRepository;
@@ -75,6 +78,19 @@ public class QuizService {
     // 注入 Redis 限流，用於全域精確 RPM 限流
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
+
+    // 業界最佳實踐：預先配置執行緒安全的 ObjectMapper 以便重複利用
+    private final ObjectMapper quizObjectMapper =
+            new ObjectMapper()
+                    .configure(
+                            JsonReadFeature
+                                    .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER
+                                    .mappedFeature(),
+                            true)
+                    .configure(
+                            DeserializationFeature
+                                    .FAIL_ON_UNKNOWN_PROPERTIES,
+                            false);
 
     @Value("classpath:prompts/quiz-single-choice-generation.st")
     private Resource promptResource;
@@ -314,16 +330,8 @@ public class QuizService {
 
     /** AI 單題生成方法，以結構化 JSON 輸出解析 */
     private GeneratedQuestionDto generateSingleQuestion(String context, String difficulty) {
-        var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        objectMapper.configure(
-                com.fasterxml.jackson.core.json.JsonReadFeature
-                        .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER
-                        .mappedFeature(),
-                true);
-        objectMapper.configure(
-                com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
-                false);
-        var outputConverter = new BeanOutputConverter<>(GeneratedQuestionDto.class, objectMapper);
+        var outputConverter =
+                new BeanOutputConverter<>(GeneratedQuestionDto.class, quizObjectMapper);
         String formatSpec = outputConverter.getFormat();
 
         String promptText;
@@ -739,13 +747,8 @@ public class QuizService {
         if (cachedJson != null) {
             if (!regenerate) {
                 try {
-                    var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    mapper.configure(
-                            com.fasterxml.jackson.databind.DeserializationFeature
-                                    .FAIL_ON_UNKNOWN_PROPERTIES,
-                            false);
                     ClassDoubtResponse cachedResult =
-                            mapper.readValue(cachedJson, ClassDoubtResponse.class);
+                            quizObjectMapper.readValue(cachedJson, ClassDoubtResponse.class);
                     List<String> userMessages =
                             aiMessageRepository.findUserMessagesByMaterialId(
                                     materialId, org.springframework.data.domain.Limit.of(50));
@@ -760,9 +763,18 @@ public class QuizService {
             }
         }
 
+        // 💡 效能與資源保護：在加鎖與呼叫 AI 前，先拉取與檢查學生的提問紀錄。
+        // 若學生無任何提問紀錄，則直接回傳空主題，避免浪費 AI Token 或引發併發鎖與頻率限制開銷。
+        List<String> userMessages =
+                aiMessageRepository.findUserMessagesByMaterialId(
+                        materialId, org.springframework.data.domain.Limit.of(50));
+        if (userMessages.isEmpty()) {
+            return new ClassDoubtResponse(0, java.util.Collections.emptyList());
+        }
+
         boolean lockAcquired = false;
         try {
-            // 3. 準備重新分析或初次分析：進行原子加鎖 (防併發)
+            // 4. 準備重新分析或初次分析：進行原子加鎖 (防併發)
             // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，防範多執行緒 Race Condition
             Boolean isLockAcquired =
                     redisTemplate
@@ -773,16 +785,11 @@ public class QuizService {
             }
             lockAcquired = true;
 
-            // 4. 檢查 Rate Limit (一天一次)
+            // 5. 檢查 Rate Limit (一天一次)
             Boolean isRateLimited = redisTemplate.hasKey(rateLimitKey);
             if (Boolean.TRUE.equals(isRateLimited)) {
                 throw new QuizException(QuizErrorCode.AI_ANALYSIS_RATE_LIMIT);
             }
-
-            // 5. 獲取對話訊息進行分析
-            List<String> userMessages =
-                    aiMessageRepository.findUserMessagesByMaterialId(
-                            materialId, org.springframework.data.domain.Limit.of(50));
 
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < userMessages.size(); i++) {
@@ -790,18 +797,9 @@ public class QuizService {
             }
             String userMessagesText = sb.toString();
 
-            // 設定 Spring AI BeanOutputConverter 結構化 JSON 輸出轉換器
-            var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            objectMapper.configure(
-                    com.fasterxml.jackson.core.json.JsonReadFeature
-                            .ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER
-                            .mappedFeature(),
-                    true);
-            objectMapper.configure(
-                    com.fasterxml.jackson.databind.DeserializationFeature
-                            .FAIL_ON_UNKNOWN_PROPERTIES,
-                    false);
-            var outputConverter = new BeanOutputConverter<>(ClassDoubtResponse.class, objectMapper);
+            // 設定 Spring AI BeanOutputConverter 結構化 JSON 輸出轉換器 (重複使用已配置之 quizObjectMapper)
+            var outputConverter =
+                    new BeanOutputConverter<>(ClassDoubtResponse.class, quizObjectMapper);
             String formatSpec = outputConverter.getFormat();
 
             // 讀取疑問分析 prompt 範本
@@ -836,7 +834,7 @@ public class QuizService {
             }
 
             // 寫入快取
-            String jsonResult = objectMapper.writeValueAsString(analysisResult);
+            String jsonResult = quizObjectMapper.writeValueAsString(analysisResult);
             redisTemplate.opsForValue().set(cacheKey, jsonResult);
 
             // 設定 24 小時限流
