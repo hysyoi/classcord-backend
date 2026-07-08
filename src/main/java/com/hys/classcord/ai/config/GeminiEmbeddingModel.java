@@ -2,6 +2,7 @@ package com.hys.classcord.ai.config;
 
 import com.hys.classcord.ai.service.AiRateLimitService;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -44,14 +45,17 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
     @Override
     @SuppressWarnings("unchecked")
     public EmbeddingResponse call(EmbeddingRequest request) {
-        int batchSize = (request.getInstructions() != null) ? request.getInstructions().size() : 0;
-        if (batchSize > 0) {
-            checkRateLimit(batchSize);
+        List<String> instructions = request.getInstructions();
+        if (instructions == null || instructions.isEmpty()) {
+            return new EmbeddingResponse(Collections.emptyList(), new EmbeddingResponseMetadata());
         }
+
+        int batchSize = instructions.size();
+        checkRateLimit(batchSize);
         List<Embedding> embeddings = new ArrayList<>();
         int index = 0;
 
-        for (String text : request.getInstructions()) {
+        for (String text : instructions) {
             Map<String, Object> body =
                     Map.of(
                             "content",
