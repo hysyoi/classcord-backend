@@ -1,5 +1,6 @@
 package com.hys.classcord.ai.service;
 
+import com.hys.classcord.ai.config.AiLimitProperties;
 import com.hys.classcord.ai.dto.AiLimitStatusResponse;
 import com.hys.classcord.ai.entity.AiMessage;
 import com.hys.classcord.ai.entity.AiSession;
@@ -67,12 +68,7 @@ public class AiAssistantService {
     private final TransactionTemplate transactionTemplate;
     private final SimpMessagingTemplate messagingTemplate;
     private final StringRedisTemplate redisTemplate;
-
-    @Value("${app.ai.limit.chat-daily-max:400}")
-    private int chatDailyMax;
-
-    @Value("${app.ai.limit.embedding-daily-max:3000}")
-    private int embeddingDailyMax;
+    private final AiLimitProperties aiLimitProperties;
 
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
@@ -444,6 +440,9 @@ public class AiAssistantService {
         // 四捨五入處理
         double finalCostUsd = Math.round(totalCostUsd * 10000.0) / 10000.0;
         double finalCostTwd = Math.round(totalCostTwd * 100.0) / 100.0;
+
+        int chatDailyMax = aiLimitProperties.getChatDailyMax();
+        int embeddingDailyMax = aiLimitProperties.getEmbeddingDailyMax();
 
         double chatProgress = chatDailyMax > 0 ? ((double) chatCount / chatDailyMax) * 100 : 0.0;
         double embedProgress =
