@@ -74,6 +74,10 @@ logging:
     org.hibernate.orm.jdbc.bind: TRACE # 顯示 SQL 傳入的真實變數數值
 
 app:
+  ai:
+    limit:
+      chat-daily-max: 400
+      embedding-daily-max: 3000
   turnstile:
     enabled: ${TURNSTILE_ENABLED:true}
     site-key: ${TURNSTILE_SITE_KEY:1x00000000000000000000AA}

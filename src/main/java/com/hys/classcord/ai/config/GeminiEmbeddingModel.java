@@ -1,13 +1,20 @@
 package com.hys.classcord.ai.config;
 
+import com.hys.classcord.ai.enums.AiErrorCode;
+import com.hys.classcord.ai.exception.AiException;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.ai.embedding.AbstractEmbeddingModel;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.ai.embedding.EmbeddingResponseMetadata;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.web.client.RestClient;
 
 /** 自訂 Gemini 向量嵌入模型，直接呼叫 Google 官方原生 API 以避開 OpenAI 相容層缺失 usage 欄位導致的 NullPointerException。 */
@@ -16,11 +23,44 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
     private final RestClient restClient;
     private final String apiKey;
     private final String modelName;
+    private final StringRedisTemplate redisTemplate;
+    private final RedisScript<Long> rateLimitScript;
+    private final int embeddingDailyMax;
 
-    public GeminiEmbeddingModel(RestClient restClient, String apiKey, String modelName) {
+    private static final int EXPIRE_SECONDS = 86400; // 24 小時
+
+    public GeminiEmbeddingModel(
+            RestClient restClient,
+            String apiKey,
+            String modelName,
+            StringRedisTemplate redisTemplate,
+            RedisScript<Long> rateLimitScript,
+            int embeddingDailyMax) {
         this.restClient = restClient;
         this.apiKey = apiKey;
         this.modelName = modelName;
+        this.redisTemplate = redisTemplate;
+        this.rateLimitScript = rateLimitScript;
+        this.embeddingDailyMax = embeddingDailyMax;
+    }
+
+    private void checkRateLimit() {
+        String key = "ai:all-site:embedding-limit:" + LocalDate.now();
+        try {
+            Long count =
+                    redisTemplate.execute(
+                            rateLimitScript,
+                            Collections.singletonList(key),
+                            String.valueOf(EXPIRE_SECONDS));
+            long currentCount = Optional.ofNullable(count).orElse(0L);
+            if (currentCount > embeddingDailyMax) {
+                throw new AiException(AiErrorCode.EMBEDDING_LIMIT_EXCEEDED);
+            }
+        } catch (AiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AiException(AiErrorCode.EMBEDDING_LIMIT_EXCEEDED, "安全系統異常，暫時無法執行向量化");
+        }
     }
 
     @Override
@@ -31,6 +71,7 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
     @Override
     @SuppressWarnings("unchecked")
     public EmbeddingResponse call(EmbeddingRequest request) {
+        checkRateLimit();
         List<Embedding> embeddings = new ArrayList<>();
         int index = 0;
 

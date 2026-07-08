@@ -2,6 +2,7 @@ package com.hys.classcord.ai.controller;
 
 import com.hys.classcord.ai.dto.AiChatRequest;
 import com.hys.classcord.ai.dto.AiChatResponse;
+import com.hys.classcord.ai.dto.AiLimitStatusResponse;
 import com.hys.classcord.ai.dto.AiMessageResponse;
 import com.hys.classcord.ai.dto.AiSessionResponse;
 import com.hys.classcord.ai.dto.CreateSessionRequest;
@@ -85,5 +86,11 @@ public class AiAssistantController {
             @Valid @RequestBody AiChatRequest request) {
 
         return aiAssistantService.chatInSessionStream(userId, sessionId, request.message());
+    }
+
+    @GetMapping("/ai-limit-status")
+    @Operation(summary = "查詢全站 AI 呼叫額度與估算成本", description = "回傳今日累積呼叫次數、設定上限、使用進度百分比以及估算消費金額")
+    public ResponseEntity<AiLimitStatusResponse> getAiLimitStatus() {
+        return ResponseEntity.ok(aiAssistantService.getAiLimitStatus());
     }
 }
