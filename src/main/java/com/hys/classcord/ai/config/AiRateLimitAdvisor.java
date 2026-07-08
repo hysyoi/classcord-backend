@@ -2,7 +2,9 @@ package com.hys.classcord.ai.config;
 
 import com.hys.classcord.ai.enums.AiErrorCode;
 import com.hys.classcord.ai.exception.AiException;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -23,8 +25,6 @@ public class AiRateLimitAdvisor implements CallAroundAdvisor, StreamAroundAdviso
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
     private final int chatDailyMax;
-
-    private static final int EXPIRE_SECONDS = 86400; // 24 小時
 
     public AiRateLimitAdvisor(
             StringRedisTemplate redisTemplate,
@@ -55,7 +55,7 @@ public class AiRateLimitAdvisor implements CallAroundAdvisor, StreamAroundAdviso
                     redisTemplate.execute(
                             rateLimitScript,
                             Collections.singletonList(key),
-                            String.valueOf(EXPIRE_SECONDS));
+                            String.valueOf(getSecondsUntilMidnight()));
             long currentCount = Optional.ofNullable(count).orElse(0L);
 
             if (currentCount > chatDailyMax) {
@@ -68,6 +68,13 @@ public class AiRateLimitAdvisor implements CallAroundAdvisor, StreamAroundAdviso
             log.error("【安全防護警告】限流檢測過程中 Redis 異常，Fail-Fast 啟動！錯誤: {}", e.getMessage());
             throw new AiException(AiErrorCode.RATE_LIMIT_EXCEEDED, "安全檢測系統異常，請稍後再試。");
         }
+    }
+
+    private long getSecondsUntilMidnight() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime midnight = LocalDate.now().plusDays(1).atStartOfDay();
+        // 加上 10 分鐘（600 秒）的安全緩衝時間，防範伺服器與 Redis 時鐘漂移或跨日邊界併發問題
+        return Math.max(1, Duration.between(now, midnight).toSeconds() + 600);
     }
 
     @Override

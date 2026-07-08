@@ -2,7 +2,9 @@ package com.hys.classcord.ai.config;
 
 import com.hys.classcord.ai.enums.AiErrorCode;
 import com.hys.classcord.ai.exception.AiException;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -27,8 +29,6 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
     private final RedisScript<Long> rateLimitScript;
     private final int embeddingDailyMax;
 
-    private static final int EXPIRE_SECONDS = 86400; // 24 小時
-
     public GeminiEmbeddingModel(
             RestClient restClient,
             String apiKey,
@@ -51,7 +51,7 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
                     redisTemplate.execute(
                             rateLimitScript,
                             Collections.singletonList(key),
-                            String.valueOf(EXPIRE_SECONDS));
+                            String.valueOf(getSecondsUntilMidnight()));
             long currentCount = Optional.ofNullable(count).orElse(0L);
             if (currentCount > embeddingDailyMax) {
                 throw new AiException(AiErrorCode.EMBEDDING_LIMIT_EXCEEDED);
@@ -61,6 +61,13 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
         } catch (Exception e) {
             throw new AiException(AiErrorCode.EMBEDDING_LIMIT_EXCEEDED, "安全系統異常，暫時無法執行向量化");
         }
+    }
+
+    private long getSecondsUntilMidnight() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime midnight = LocalDate.now().plusDays(1).atStartOfDay();
+        // 加上 10 分鐘（600 秒）的安全緩衝時間，防範伺服器與 Redis 時鐘漂移或跨日邊界併發問題
+        return Math.max(1, Duration.between(now, midnight).toSeconds() + 600);
     }
 
     @Override
