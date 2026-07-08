@@ -31,29 +31,32 @@ public class AiRateLimitService {
         String key = "ai:all-site:limit:" + LocalDate.now(ZONE_TAIPEI);
         checkRateLimit(
                 key,
+                1,
                 aiLimitProperties.getChatDailyMax(),
                 AiErrorCode.RATE_LIMIT_EXCEEDED,
                 "安全檢測系統異常，請稍後再試。");
     }
 
     /** 檢查向量嵌入（Embedding）限流額度 */
-    public void checkEmbeddingRateLimit() {
+    public void checkEmbeddingRateLimit(int batchSize) {
         String key = "ai:all-site:embedding-limit:" + LocalDate.now(ZONE_TAIPEI);
         checkRateLimit(
                 key,
+                batchSize,
                 aiLimitProperties.getEmbeddingDailyMax(),
                 AiErrorCode.EMBEDDING_LIMIT_EXCEEDED,
                 "安全系統異常，暫時無法執行向量化");
     }
 
     private void checkRateLimit(
-            String key, int maxLimit, AiErrorCode errorCode, String systemErrorMessage) {
+            String key, int delta, int maxLimit, AiErrorCode errorCode, String systemErrorMessage) {
         try {
             Long count =
                     redisTemplate.execute(
                             rateLimitScript,
                             Collections.singletonList(key),
-                            String.valueOf(getSecondsUntilMidnight()));
+                            String.valueOf(getSecondsUntilMidnight()),
+                            String.valueOf(delta));
             long currentCount = Optional.ofNullable(count).orElse(0L);
 
             if (currentCount > maxLimit) {

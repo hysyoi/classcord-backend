@@ -32,8 +32,8 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
         this.rateLimitService = rateLimitService;
     }
 
-    private void checkRateLimit() {
-        rateLimitService.checkEmbeddingRateLimit();
+    private void checkRateLimit(int batchSize) {
+        rateLimitService.checkEmbeddingRateLimit(batchSize);
     }
 
     @Override
@@ -44,7 +44,10 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
     @Override
     @SuppressWarnings("unchecked")
     public EmbeddingResponse call(EmbeddingRequest request) {
-        checkRateLimit();
+        int batchSize = (request.getInstructions() != null) ? request.getInstructions().size() : 0;
+        if (batchSize > 0) {
+            checkRateLimit(batchSize);
+        }
         List<Embedding> embeddings = new ArrayList<>();
         int index = 0;
 
