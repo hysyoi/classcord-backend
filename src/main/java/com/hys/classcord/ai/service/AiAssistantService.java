@@ -19,8 +19,11 @@ import com.hys.classcord.material.exception.MaterialException;
 import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.message.dto.MessageResponse;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -69,6 +72,8 @@ public class AiAssistantService {
     private final SimpMessagingTemplate messagingTemplate;
     private final StringRedisTemplate redisTemplate;
     private final AiLimitProperties aiLimitProperties;
+
+    private static final ZoneId ZONE_TAIPEI = ZoneId.of("Asia/Taipei");
 
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
@@ -417,7 +422,7 @@ public class AiAssistantService {
 
     /** 獲取今日全站 AI 的調用額度狀態與估算費用 */
     public AiLimitStatusResponse getAiLimitStatus() {
-        String dateStr = LocalDate.now().toString();
+        String dateStr = LocalDate.now(ZONE_TAIPEI).toString();
         String chatKey = "ai:all-site:limit:" + dateStr;
         String embedKey = "ai:all-site:embedding-limit:" + dateStr;
 
@@ -432,14 +437,18 @@ public class AiAssistantService {
         // 假設平均對話耗用：輸入 3,000 tokens ($0.0009), 輸出 300 tokens ($0.00075)，合計單次約 $0.00165 USD
         // Embedding: 輸入單價 $0.15/M.
         // 假設平均切片耗用：輸入 800 tokens，單次約 $0.00012 USD
-        double chatCost = chatCount * 0.00165;
-        double embedCost = embedCount * 0.00012;
-        double totalCostUsd = chatCost + embedCost;
-        double totalCostTwd = totalCostUsd * 32.5; // 以台幣匯率 32.5 計算
+        BigDecimal chatCostPerCall = new BigDecimal("0.00165");
+        BigDecimal embedCostPerCall = new BigDecimal("0.00012");
+        BigDecimal exchangeRate = new BigDecimal("32.5");
 
-        // 四捨五入處理
-        double finalCostUsd = Math.round(totalCostUsd * 10000.0) / 10000.0;
-        double finalCostTwd = Math.round(totalCostTwd * 100.0) / 100.0;
+        BigDecimal chatCost = BigDecimal.valueOf(chatCount).multiply(chatCostPerCall);
+        BigDecimal embedCost = BigDecimal.valueOf(embedCount).multiply(embedCostPerCall);
+        BigDecimal totalCostUsd = chatCost.add(embedCost);
+        BigDecimal totalCostTwd = totalCostUsd.multiply(exchangeRate);
+
+        // 四捨五入處理 (USD 4位小數，TWD 2位小數)
+        double finalCostUsd = totalCostUsd.setScale(4, RoundingMode.HALF_UP).doubleValue();
+        double finalCostTwd = totalCostTwd.setScale(2, RoundingMode.HALF_UP).doubleValue();
 
         int chatDailyMax = aiLimitProperties.getChatDailyMax();
         int embeddingDailyMax = aiLimitProperties.getEmbeddingDailyMax();

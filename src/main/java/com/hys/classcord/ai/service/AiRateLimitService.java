@@ -6,6 +6,7 @@ import com.hys.classcord.ai.exception.AiException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -19,13 +20,15 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AiRateLimitService {
 
+    private static final ZoneId ZONE_TAIPEI = ZoneId.of("Asia/Taipei");
+
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
     private final AiLimitProperties aiLimitProperties;
 
     /** 檢查對話（Chat）限流額度 */
     public void checkChatRateLimit() {
-        String key = "ai:all-site:limit:" + LocalDate.now();
+        String key = "ai:all-site:limit:" + LocalDate.now(ZONE_TAIPEI);
         checkRateLimit(
                 key,
                 aiLimitProperties.getChatDailyMax(),
@@ -35,7 +38,7 @@ public class AiRateLimitService {
 
     /** 檢查向量嵌入（Embedding）限流額度 */
     public void checkEmbeddingRateLimit() {
-        String key = "ai:all-site:embedding-limit:" + LocalDate.now();
+        String key = "ai:all-site:embedding-limit:" + LocalDate.now(ZONE_TAIPEI);
         checkRateLimit(
                 key,
                 aiLimitProperties.getEmbeddingDailyMax(),
@@ -66,8 +69,8 @@ public class AiRateLimitService {
     }
 
     private long getSecondsUntilMidnight() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime midnight = LocalDate.now().plusDays(1).atStartOfDay();
+        LocalDateTime now = LocalDateTime.now(ZONE_TAIPEI);
+        LocalDateTime midnight = LocalDate.now(ZONE_TAIPEI).plusDays(1).atStartOfDay();
         // 加上 10 分鐘（600 秒）的安全緩衝時間，防範伺服器與 Redis 時鐘漂移或跨日邊界併發問題
         return Math.max(1, Duration.between(now, midnight).toSeconds() + 600);
     }
