@@ -432,6 +432,13 @@ public class AiAssistantService {
         long chatCount = chatVal == null ? 0L : Long.parseLong(chatVal);
         long embedCount = embedVal == null ? 0L : Long.parseLong(embedVal);
 
+        int chatDailyMax = aiLimitProperties.getChatDailyMax();
+        int embeddingDailyMax = aiLimitProperties.getEmbeddingDailyMax();
+
+        // 確保超出的無效請求次數不會計入實際的計數與成本計算中
+        long displayChatCount = Math.min(chatCount, chatDailyMax);
+        long displayEmbedCount = Math.min(embedCount, embeddingDailyMax);
+
         // 估算成本計算 (Gemini 2.5 Flash / gemini-embedding-001)
         // Chat: 輸入單價 $0.30/M, 輸出單價 $2.50/M.
         // 假設平均對話耗用：輸入 3,000 tokens ($0.0009), 輸出 300 tokens ($0.00075)，合計單次約 $0.00165 USD
@@ -441,17 +448,14 @@ public class AiAssistantService {
         BigDecimal embedCostPerCall = new BigDecimal("0.00012");
         BigDecimal exchangeRate = new BigDecimal("32.5");
 
-        BigDecimal chatCost = BigDecimal.valueOf(chatCount).multiply(chatCostPerCall);
-        BigDecimal embedCost = BigDecimal.valueOf(embedCount).multiply(embedCostPerCall);
+        BigDecimal chatCost = BigDecimal.valueOf(displayChatCount).multiply(chatCostPerCall);
+        BigDecimal embedCost = BigDecimal.valueOf(displayEmbedCount).multiply(embedCostPerCall);
         BigDecimal totalCostUsd = chatCost.add(embedCost);
         BigDecimal totalCostTwd = totalCostUsd.multiply(exchangeRate);
 
         // 四捨五入處理 (USD 4位小數，TWD 2位小數)
         double finalCostUsd = totalCostUsd.setScale(4, RoundingMode.HALF_UP).doubleValue();
         double finalCostTwd = totalCostTwd.setScale(2, RoundingMode.HALF_UP).doubleValue();
-
-        int chatDailyMax = aiLimitProperties.getChatDailyMax();
-        int embeddingDailyMax = aiLimitProperties.getEmbeddingDailyMax();
 
         double chatProgress = chatDailyMax > 0 ? ((double) chatCount / chatDailyMax) * 100 : 0.0;
         double embedProgress =
