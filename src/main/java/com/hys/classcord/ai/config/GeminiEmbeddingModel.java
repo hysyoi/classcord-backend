@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.AbstractEmbeddingModel;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingRequest;
@@ -20,6 +21,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.web.client.RestClient;
 
 /** 自訂 Gemini 向量嵌入模型，直接呼叫 Google 官方原生 API 以避開 OpenAI 相容層缺失 usage 欄位導致的 NullPointerException。 */
+@Slf4j
 public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
 
     private final RestClient restClient;
@@ -59,6 +61,7 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
+            log.error("【安全防護警告】向量化限流檢測過程中 Redis 異常，錯誤: {}", e.getMessage(), e);
             throw new AiException(AiErrorCode.EMBEDDING_LIMIT_EXCEEDED, "安全系統異常，暫時無法執行向量化");
         }
     }
