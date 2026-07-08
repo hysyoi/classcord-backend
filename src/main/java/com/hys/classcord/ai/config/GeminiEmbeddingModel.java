@@ -1,8 +1,11 @@
 package com.hys.classcord.ai.config;
 
+import com.hys.classcord.ai.service.AiRateLimitService;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.AbstractEmbeddingModel;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingRequest;
@@ -11,16 +14,27 @@ import org.springframework.ai.embedding.EmbeddingResponseMetadata;
 import org.springframework.web.client.RestClient;
 
 /** 自訂 Gemini 向量嵌入模型，直接呼叫 Google 官方原生 API 以避開 OpenAI 相容層缺失 usage 欄位導致的 NullPointerException。 */
+@Slf4j
 public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
 
     private final RestClient restClient;
     private final String apiKey;
     private final String modelName;
+    private final AiRateLimitService rateLimitService;
 
-    public GeminiEmbeddingModel(RestClient restClient, String apiKey, String modelName) {
+    public GeminiEmbeddingModel(
+            RestClient restClient,
+            String apiKey,
+            String modelName,
+            AiRateLimitService rateLimitService) {
         this.restClient = restClient;
         this.apiKey = apiKey;
         this.modelName = modelName;
+        this.rateLimitService = rateLimitService;
+    }
+
+    private void checkRateLimit(int batchSize) {
+        rateLimitService.checkEmbeddingRateLimit(batchSize);
     }
 
     @Override
@@ -31,10 +45,17 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
     @Override
     @SuppressWarnings("unchecked")
     public EmbeddingResponse call(EmbeddingRequest request) {
+        List<String> instructions = request.getInstructions();
+        if (instructions == null || instructions.isEmpty()) {
+            return new EmbeddingResponse(Collections.emptyList(), new EmbeddingResponseMetadata());
+        }
+
+        int batchSize = instructions.size();
+        checkRateLimit(batchSize);
         List<Embedding> embeddings = new ArrayList<>();
         int index = 0;
 
-        for (String text : request.getInstructions()) {
+        for (String text : instructions) {
             Map<String, Object> body =
                     Map.of(
                             "content",

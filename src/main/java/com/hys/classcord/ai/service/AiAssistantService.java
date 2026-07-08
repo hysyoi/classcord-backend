@@ -1,5 +1,7 @@
 package com.hys.classcord.ai.service;
 
+import com.hys.classcord.ai.config.AiLimitProperties;
+import com.hys.classcord.ai.dto.AiLimitStatusResponse;
 import com.hys.classcord.ai.entity.AiMessage;
 import com.hys.classcord.ai.entity.AiSession;
 import com.hys.classcord.ai.enums.AiMessageRole;
@@ -17,7 +19,11 @@ import com.hys.classcord.material.exception.MaterialException;
 import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.message.dto.MessageResponse;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -37,6 +43,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,6 +70,10 @@ public class AiAssistantService {
     private final RagStrategyFactory strategyFactory;
     private final TransactionTemplate transactionTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+    private final StringRedisTemplate redisTemplate;
+    private final AiLimitProperties aiLimitProperties;
+
+    private static final ZoneId ZONE_TAIPEI = ZoneId.of("Asia/Taipei");
 
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
@@ -407,6 +418,59 @@ public class AiAssistantService {
         } catch (Exception e) {
             log.error("廣播教材狀態更新失敗：", e);
         }
+    }
+
+    /** 獲取今日全站 AI 的調用額度狀態與估算費用 */
+    public AiLimitStatusResponse getAiLimitStatus() {
+        String dateStr = LocalDate.now(ZONE_TAIPEI).toString();
+        String chatKey = "ai:all-site:limit:" + dateStr;
+        String embedKey = "ai:all-site:embedding-limit:" + dateStr;
+
+        String chatVal = redisTemplate.opsForValue().get(chatKey);
+        String embedVal = redisTemplate.opsForValue().get(embedKey);
+
+        long chatCount = chatVal == null ? 0L : Long.parseLong(chatVal);
+        long embedCount = embedVal == null ? 0L : Long.parseLong(embedVal);
+
+        int chatDailyMax = aiLimitProperties.getChatDailyMax();
+        int embeddingDailyMax = aiLimitProperties.getEmbeddingDailyMax();
+
+        // 確保超出的無效請求次數不會計入實際的計數與成本計算中
+        long displayChatCount = Math.min(chatCount, chatDailyMax);
+        long displayEmbedCount = Math.min(embedCount, embeddingDailyMax);
+
+        // 估算成本計算 (Gemini 2.5 Flash / gemini-embedding-001)
+        // Chat: 輸入單價 $0.30/M, 輸出單價 $2.50/M.
+        // 假設平均對話耗用：輸入 3,000 tokens ($0.0009), 輸出 300 tokens ($0.00075)，合計單次約 $0.00165 USD
+        // Embedding: 輸入單價 $0.15/M.
+        // 假設平均切片耗用：輸入 800 tokens，單次約 $0.00012 USD
+        BigDecimal chatCostPerCall = new BigDecimal("0.00165");
+        BigDecimal embedCostPerCall = new BigDecimal("0.00012");
+        BigDecimal exchangeRate = new BigDecimal("32.5");
+
+        BigDecimal chatCost = BigDecimal.valueOf(displayChatCount).multiply(chatCostPerCall);
+        BigDecimal embedCost = BigDecimal.valueOf(displayEmbedCount).multiply(embedCostPerCall);
+        BigDecimal totalCostUsd = chatCost.add(embedCost);
+        BigDecimal totalCostTwd = totalCostUsd.multiply(exchangeRate);
+
+        // 四捨五入處理 (USD 4位小數，TWD 2位小數)
+        double finalCostUsd = totalCostUsd.setScale(4, RoundingMode.HALF_UP).doubleValue();
+        double finalCostTwd = totalCostTwd.setScale(2, RoundingMode.HALF_UP).doubleValue();
+
+        double chatProgress = chatDailyMax > 0 ? ((double) chatCount / chatDailyMax) * 100 : 0.0;
+        double embedProgress =
+                embeddingDailyMax > 0 ? ((double) embedCount / embeddingDailyMax) * 100 : 0.0;
+
+        return new AiLimitStatusResponse(
+                dateStr,
+                chatCount,
+                chatDailyMax,
+                Math.min(100.0, Math.round(chatProgress * 100.0) / 100.0),
+                embedCount,
+                embeddingDailyMax,
+                Math.min(100.0, Math.round(embedProgress * 100.0) / 100.0),
+                finalCostUsd,
+                finalCostTwd);
     }
 
     private record ChatContext(
