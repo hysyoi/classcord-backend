@@ -86,3 +86,18 @@ jobs:
             
             # 6. 登出 GHCR 安全撤銷憑證
             docker logout ghcr.io
+
+      # 發送 Discord 通知 (部署成功與失敗皆會發送)
+      - name: Send Discord Notification
+        if: always()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_CD_WEBHOOK_URL }}
+          status: ${{ job.status }}
+          content: "<@${{ secrets.DISCORD_USER_ID }}> CD 部署執行完畢！"
+          title: "🚀 ClassCord Backend CD 部署狀態"
+          description: |
+            **Commit 訊息**: ${{ github.event.head_commit.message }}
+            **版本 Tag**: `${{ github.sha }}`
+            **觸發者**: `${{ github.actor }}`
+          nofail: true
