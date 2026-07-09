@@ -6,7 +6,7 @@ spring:
     active: local
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/classcord?reWriteBatchedInserts=true
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/classcord?reWriteBatchedInserts=true}
     driver-class-name: org.postgresql.Driver
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
@@ -31,14 +31,14 @@ spring:
 
   data:
     redis:
-      host: localhost
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: 6379
 
   rabbitmq:
-    host: localhost
+    host: ${SPRING_RABBITMQ_HOST:localhost}
     port: 5672
-    username: guest
-    password: guest
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
         retry:
@@ -48,7 +48,22 @@ spring:
           multiplier: 2.0         # 每次重試加倍等待 (1s -> 2s -> 4s)
           max-interval: 5000ms    # 最長等待 5 秒
 
-  # 5. Spring AI 導向 Google Gemini (使用 OpenAI 相容端點)
+  # 將 OAuth2 從 local 移入主設定，確保所有 Profile 皆能正常讀取環境變數
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+          discord:
+            client-id: ${DISCORD_CLIENT_ID}
+            client-secret: ${DISCORD_CLIENT_SECRET}
+
+  # Spring AI 導向 Google Gemini (使用 OpenAI 相容端點)
   ai:
     openai:
       api-key: ${GEMINI_API_KEY}
@@ -59,7 +74,6 @@ spring:
       embedding:
         options:
           model: gemini-embedding-001    # 向量模型：使用 Google 官方 768 維度之 gemini-embedding-001
-#          dimensions: 768
     # Spring AI 改用 material_chunks 表
     vectorstore:
       pgvector:
@@ -82,14 +96,15 @@ app:
     enabled: ${TURNSTILE_ENABLED:true}
     site-key: ${TURNSTILE_SITE_KEY:1x00000000000000000000AA}
     secret-key: ${TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA}
-  jwt: # 可能也可以抽成一個properties類
+  jwt:
     secret-key: ${JWT_SECRET_KEY}
     expiration-ms: 86400000 # 24小時以毫秒計算
   urls:
-    backend: http://localhost:8080
-    frontend: http://localhost:5173
+    # 支援透過環境變數覆蓋
+    backend: ${APP_BACKEND_URL:http://localhost:8080}
+    frontend: ${APP_FRONTEND_URL:http://localhost:5173}
   mail:
-    from-email: noreply@email.com
+    from-email: ${MAIL_FROM_EMAIL:noreply@email.com}
   # 儲存相關設定
   storage:
     endpoint: ${S3_ENDPOINT}
@@ -102,6 +117,4 @@ app:
     server-quota: 524288000    # 500 MB
   # CORS 允許的來源白名單
   cors:
-    # Local 開發預設：允許本地 localhost 前端（IntelliJ IDEA file:// 會以 null origin 發送請求）
-    # 使用逗號分隔字串，配合 @Value 注入 List<String>
-    allowed-origins: "http://localhost:3000,http://localhost:5173,http://localhost:63342,null"
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:63342,null}
