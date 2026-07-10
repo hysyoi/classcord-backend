@@ -13,7 +13,8 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @Table(
         name = "quizzes",
         indexes = {
-            @Index(name = "idx_quizzes_user_created", columnList = "user_id, created_at DESC")
+            @Index(name = "idx_quizzes_user_created", columnList = "user_id, created_at DESC"),
+            @Index(name = "idx_quizzes_material_id", columnList = "material_id")
         })
 @EntityListeners(AuditingEntityListener.class)
 @Getter

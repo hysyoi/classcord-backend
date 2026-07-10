@@ -12,7 +12,6 @@ services:
       POSTGRES_DB: classcord
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
-      - ./src/test/resources/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d classcord"]
       interval: 5s
@@ -67,7 +66,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_PROFILES_ACTIVE=prod
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
       # 連線位址全部改為 Docker 內部虛擬網路的服務容器名稱
@@ -98,7 +97,39 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - MAIL_FROM_EMAIL=${MAIL_FROM_EMAIL}
 
+  # 5. Prometheus 監控資料收集器 (定時向 backend 爬取監控資料)
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: classcord_prometheus_prod
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - promdata_prod:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      # 9090 僅限本機 Loopback 存取，保障安全性，防止控制台暴露
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - backend
+
+  # 6. Grafana 數據視覺化看板 (提供網頁前台，對接 Prometheus 資料源)
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: classcord_grafana_prod
+    restart: always
+    ports:
+      # 暴露 3000 Port，您可以直接用 http://您的伺服器IP:3000 登入控制台
+      - "3000:3000"
+    volumes:
+      - grafana_data_prod:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata_prod:
   redisdata_prod:
   rabbitmqdata_prod:
+  promdata_prod:
+  grafana_data_prod:

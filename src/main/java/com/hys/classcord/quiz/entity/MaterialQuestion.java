@@ -14,7 +14,9 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
-@Table(name = "material_questions")
+@Table(
+        name = "material_questions",
+        indexes = {@Index(name = "idx_material_questions_material_id", columnList = "material_id")})
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

@@ -12,6 +12,7 @@ import com.hys.classcord.auth.repository.UserIdentityRepository;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
 import com.hys.classcord.core.config.AppUrlProperties;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -67,9 +68,21 @@ public class AuthenticationService {
 
         // 【第二道防線：檢查 Email 是否已經在 DB 中存在】
         if (userRepository.existsByEmail(normalizedEmail)) {
-            // 實務資安小優化：如果信箱已存在，雖然丟異常，但因為前面已經設了 60 秒鎖，
-            // 壞人也沒辦法用這個已註冊的信箱來瘋狂刷你的郵件伺服器！
-            throw new AuthException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+            // 如果已註冊過，不向前端拋出異常 (防枚舉)，而是寄送一封「已擁有帳號通知信」
+            try {
+                mailService.sendAuthMail(
+                        normalizedEmail,
+                        "【Classcord】帳戶重複註冊提醒",
+                        "REGISTER",
+                        "帳戶已存在提醒",
+                        "您好：我們收到了一筆使用此電子郵件註冊 Classcord 的請求。然而，此信箱已經在平台註冊過帳戶，我們無法為您重複建立帳戶。如果您忘記密碼，請點擊下方按鈕前往登入頁面，並使用「忘記密碼」功能重設密碼。",
+                        "前往登入頁面",
+                        appUrlProperties.getFrontend() + "/login",
+                        "如果您並未進行此操作，請忽略此郵件，您的帳戶目前非常安全。");
+            } catch (Exception e) {
+                log.error("發送帳號重複註冊提醒信失敗: {}", normalizedEmail, e);
+            }
+            return;
         }
 
         try {
@@ -154,7 +167,10 @@ public class AuthenticationService {
     }
 
     /** 忘記密碼階段一：驗證信箱存在，並產生限時 15 分鐘的重設憑證 */
-    public void sendResetPasswordLink(String email) {
+    public void sendResetPasswordLink(String email, String turnstileToken) {
+        // 先驗證 Turnstile，防範機器人刷信
+        turnstileService.verifyToken(turnstileToken, null);
+
         String normalizedEmail = email.toLowerCase().trim();
 
         // 【第一道防線：60 秒防刷原子鎖】
@@ -169,37 +185,37 @@ public class AuthenticationService {
             throw new AuthException(AuthErrorCode.TOO_MANY_REQUESTS);
         }
 
-        // 【第二道防線：檢查真偽】只有真正註冊過的使用者才能重設密碼
-        User user =
-                userRepository
-                        .findByEmail(normalizedEmail)
-                        .orElseThrow(() -> new AuthException(AuthErrorCode.INVALID_CREDENTIALS));
-
         try {
-            // 這裡不需要包成 DTO，因為重設密碼時，我們只需要在 Redis 記住「是哪一個 Email 發起重設的」即可
-            // 呼叫你的萬用驗證中心，產生用途為 "RESET_PASSWORD" 的 Token，時效給 15 分鐘
-            String token = tokenService.createToken("RESET_PASSWORD", normalizedEmail, 15);
+            // 【第二道防線：檢查真偽】只有真正註冊過的使用者才能重設密碼
+            Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
 
-            // // 輸出測試重設連結
-            // String resetLink = "http://localhost:8080/v1/auth/reset-password?token=" + token;
-            // System.out.println("\n==================================================");
-            // System.out.println("【Classcord 密碼重設信】模擬寄出成功！");
-            // System.out.println("請複製下方連結並帶上 newPassword 參數執行重設（15分鐘內有效）：");
-            // System.out.println(resetLink);
-            // System.out.println("==================================================\n");
+            if (userOpt.isPresent()) {
+                // 這裡不需要包成 DTO，因為重設密碼時，我們只需要在 Redis 記住「是哪一個 Email 發起重設的」即可
+                // 呼叫你的萬用驗證中心，產生用途為 "RESET_PASSWORD" 的 Token，時效給 15 分鐘
+                String token = tokenService.createToken("RESET_PASSWORD", normalizedEmail, 15);
 
-            // 指向前端密碼重設路由
-            String resetLink = appUrlProperties.getFrontend() + "/reset-password?token=" + token;
+                // 指向前端密碼重設路由
+                String resetLink =
+                        appUrlProperties.getFrontend() + "/reset-password?token=" + token;
 
-            mailService.sendAuthMail(
-                    normalizedEmail,
-                    "【Classcord】密碼重設驗證通知",
-                    "RESET",
-                    "Classcord",
-                    "我們收到了您重設 Classcord 帳戶密碼的請求。請點擊下方按鈕以重新設定您的密碼：",
-                    "重設我的密碼",
-                    resetLink,
-                    "⚠️ 本重設連結安全時效為 15 分鐘。若您並未發起此請求，請忽略本信件。");
+                mailService.sendAuthMail(
+                        normalizedEmail,
+                        "【Classcord】密碼重設驗證通知",
+                        "RESET",
+                        "密碼重設通知",
+                        "我們收到了您重設 Classcord 帳戶密碼的請求。請點擊下方按鈕以重新設定您的密碼：",
+                        "重設我的密碼",
+                        resetLink,
+                        "⚠️ 本重設連結安全時效為 15 分鐘。若您並未發起此請求，請忽略本信件。");
+            } else {
+                log.info("忘記密碼請求：信箱未註冊，靜默忽略: {}", normalizedEmail);
+                // 模擬寄信延時以防時間差分析（Timing Attack）
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
 
         } catch (Exception e) {
             // 如果中途發生非預期異常，立刻手動移除 60 秒鎖，避免卡死正常使用者

@@ -18,7 +18,8 @@ import org.hibernate.annotations.SQLRestriction;
         indexes = {
             @Index(
                     name = "idx_messages_channel_created_at",
-                    columnList = "channel_id, created_at DESC")
+                    columnList = "channel_id, created_at DESC"),
+            @Index(name = "idx_messages_user_id", columnList = "user_id")
         })
 @SQLDelete(sql = "UPDATE messages SET deleted = true WHERE id = ?")
 @SQLRestriction("deleted = false")

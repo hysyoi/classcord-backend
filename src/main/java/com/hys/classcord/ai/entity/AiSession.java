@@ -12,7 +12,8 @@ import lombok.*;
         indexes = {
             @Index(
                     name = "idx_ai_sessions_user_material",
-                    columnList = "user_id, material_id, created_at DESC")
+                    columnList = "user_id, material_id, created_at DESC"),
+            @Index(name = "idx_ai_sessions_material_id", columnList = "material_id")
         })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

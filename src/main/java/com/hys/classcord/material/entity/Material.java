@@ -7,7 +7,9 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "materials")
+@Table(
+        name = "materials",
+        indexes = {@Index(name = "idx_materials_message_id", columnList = "message_id")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor

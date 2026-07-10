@@ -12,7 +12,8 @@ import lombok.*;
             @UniqueConstraint(
                     name = "uq_provider_uid",
                     columnNames = {"provider", "provider_uid"})
-        })
+        },
+        indexes = {@Index(name = "idx_user_identities_user_id", columnList = "user_id")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor

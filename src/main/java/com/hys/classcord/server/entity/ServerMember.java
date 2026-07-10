@@ -16,7 +16,8 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
             @UniqueConstraint(
                     name = "uq_server_user",
                     columnNames = {"server_id", "user_id"})
-        })
+        },
+        indexes = {@Index(name = "idx_server_members_user_id", columnList = "user_id")})
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

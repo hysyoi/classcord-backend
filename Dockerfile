@@ -14,11 +14,21 @@ RUN mvn clean package -DskipTests -B
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-# 從編譯階段複製 JAR 包到運行環境
-COPY --from=build /app/target/*.jar app.jar
+# 1. 建立非 root 的群組 (appgroup) 與使用者 (appuser)
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# 暴露 Spring Boot 的 8080 Port
+# 2. 複製 JAR 包，同時將該檔案的主人設定為 appuser
+COPY --from=build --chown=appuser:appgroup /app/target/*.jar app.jar
+
+# 3. 暴露 8080 Port
 EXPOSE 8080
 
-# 啟動命令，預設啟動開發模式的 dev Profile (對接 Resend 與雲端資料庫)
-ENTRYPOINT ["java", "-Dspring.profiles.active=dev", "-jar", "app.jar"]
+# 4. 透過 Actuator 進行健康檢查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+
+# 5. 切換為非特權使用者 appuser，後續指令都以此身份執行
+USER appuser
+
+# 6. 啟動命令
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

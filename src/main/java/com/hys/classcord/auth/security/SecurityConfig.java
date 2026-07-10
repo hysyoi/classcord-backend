@@ -113,6 +113,8 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers("/ws/**")
                                         .permitAll()
+                                        .requestMatchers("/actuator/**")
+                                        .permitAll()
                                         .anyRequest()
                                         .authenticated());
 
