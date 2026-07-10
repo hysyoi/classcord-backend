@@ -6,9 +6,11 @@ import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Slf4j
 @RestControllerAdvice
@@ -80,4 +82,35 @@ public class GlobalExceptionHandler {
     // public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
     //     log.warn("【連線通知】使用者在 AI 串流結束時已提前離開連線。");
     // }
+
+    /** 4. 攔截 JSON 解析失敗異常 (例如前端送了毀損的 JSON 格式) */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> handleHttpMessageNotReadableException(
+            HttpMessageNotReadableException ex) {
+        log.warn("請求 JSON 格式錯誤: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(
+                        Map.of(
+                                "status",
+                                HttpStatus.BAD_REQUEST.value(),
+                                "error",
+                                "Bad Request",
+                                "message",
+                                "請求的 JSON 格式錯誤或無法解析",
+                                "timestamp",
+                                LocalDateTime.now().toString()));
+    }
+
+    /** 5. 攔截 URL 參數類型不匹配異常 (例如預期傳入 UUID，但前端傳入非法字串) */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<?> handleTypeMismatchException(MethodArgumentTypeMismatchException ex) {
+        log.warn("參數類型不匹配: 欄位=[{}], 傳入值=[{}]", ex.getName(), ex.getValue());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(
+                        Map.of(
+                                "status", HttpStatus.BAD_REQUEST.value(),
+                                "error", "Bad Request",
+                                "message", String.format("參數 '%s' 的類型錯誤", ex.getName()),
+                                "timestamp", LocalDateTime.now().toString()));
+    }
 }

@@ -8,7 +8,9 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "quiz_questions")
+@Table(
+        name = "quiz_questions",
+        indexes = {@Index(name = "idx_quiz_questions_quiz_id", columnList = "quiz_id")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor

@@ -2,6 +2,7 @@ package com.hys.classcord.auth.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
@@ -11,7 +12,11 @@ public record RegisterRequest(
                 @Email(message = "Email格式錯誤")
                 @Size(max = 255, message = "Email長度不可超過255字元")
                 String email,
-        @NotBlank(message = "密碼不可為空") @Size(min = 8, max = 100, message = "密碼長度需介於 8~100 字元")
+        @NotBlank(message = "密碼不可為空")
+                @Size(min = 8, max = 100, message = "密碼長度需介於 8~100 字元")
+                @Pattern(
+                        regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$",
+                        message = "密碼必須包含至少一個大寫字母、一個小寫字母、一個數字和一個特殊符號")
                 String password,
         String turnstileToken) {
     public RegisterRequest(String username, String email, String password) {

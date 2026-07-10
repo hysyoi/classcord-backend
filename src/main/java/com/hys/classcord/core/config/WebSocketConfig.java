@@ -7,8 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -28,6 +30,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtUtils jwtUtils;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("#{\"${app.cors.allowed-origins}\".split(\"\\s*,\\s*\")}")
     private List<String> allowedOrigins;
@@ -66,6 +69,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
                             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                                 String token = authHeader.substring(7);
+
+                                // 檢查 Redis 黑名單
+                                String redisKey = "JWT_BLACKLIST:" + token;
+                                if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
+                                    log.warn("WebSocket 連線認證失敗：JWT Token 已被作廢（黑名單）");
+                                    throw new MessageDeliveryException("認證已失效，請重新登入");
+                                }
+
                                 String userId = jwtUtils.getUserIdFromToken(token);
 
                                 if (userId != null) {
@@ -81,11 +92,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                                     log.info("WebSocket 連線認證成功，使用者 ID: {}", userId);
                                 } else {
                                     log.warn("WebSocket 連線認證失敗：JWT Token 無效或已過期");
-                                    throw new IllegalArgumentException("無效的認證憑證");
+                                    throw new MessageDeliveryException("無效的認證憑證");
                                 }
                             } else {
                                 log.warn("WebSocket 連線認證失敗：未提供 Authorization Header 或格式不符");
-                                throw new IllegalArgumentException("缺少認證憑證");
+                                throw new MessageDeliveryException("缺少認證憑證");
                             }
                         }
                         return message;
