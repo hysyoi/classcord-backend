@@ -209,12 +209,6 @@ public class AuthenticationService {
                         "⚠️ 本重設連結安全時效為 15 分鐘。若您並未發起此請求，請忽略本信件。");
             } else {
                 log.info("忘記密碼請求：信箱未註冊，靜默忽略: {}", normalizedEmail);
-                // 模擬寄信延時以防時間差分析（Timing Attack）
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
             }
 
         } catch (Exception e) {
