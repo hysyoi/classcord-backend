@@ -113,7 +113,7 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers("/ws/**")
                                         .permitAll()
-                                        .requestMatchers("/actuator/**")
+                                        .requestMatchers("/actuator/health", "/actuator/prometheus")
                                         .permitAll()
                                         .anyRequest()
                                         .authenticated());
