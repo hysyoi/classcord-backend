@@ -15,8 +15,7 @@ public record RegisterRequest(
         @NotBlank(message = "密碼不可為空")
                 @Size(min = 8, max = 100, message = "密碼長度需介於 8~100 字元")
                 @Pattern(
-                        regexp =
-                                "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&#])[A-Za-z\\d@$!%*?&#]{8,}$",
+                        regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$",
                         message = "密碼必須包含至少一個大寫字母、一個小寫字母、一個數字和一個特殊符號")
                 String password,
         String turnstileToken) {

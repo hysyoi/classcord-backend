@@ -69,19 +69,15 @@ public class AuthenticationService {
         // 【第二道防線：檢查 Email 是否已經在 DB 中存在】
         if (userRepository.existsByEmail(normalizedEmail)) {
             // 如果已註冊過，不向前端拋出異常 (防枚舉)，而是寄送一封「已擁有帳號通知信」
-            try {
-                mailService.sendAuthMail(
-                        normalizedEmail,
-                        "【Classcord】帳戶重複註冊提醒",
-                        "REGISTER",
-                        "帳戶已存在提醒",
-                        "您好：我們收到了一筆使用此電子郵件註冊 Classcord 的請求。然而，此信箱已經在平台註冊過帳戶，我們無法為您重複建立帳戶。如果您忘記密碼，請點擊下方按鈕前往登入頁面，並使用「忘記密碼」功能重設密碼。",
-                        "前往登入頁面",
-                        appUrlProperties.getFrontend() + "/login",
-                        "如果您並未進行此操作，請忽略此郵件，您的帳戶目前非常安全。");
-            } catch (Exception e) {
-                log.error("發送帳號重複註冊提醒信失敗: {}", normalizedEmail, e);
-            }
+            mailService.sendAuthMail(
+                    normalizedEmail,
+                    "【Classcord】帳戶重複註冊提醒",
+                    "REGISTER",
+                    "帳戶已存在提醒",
+                    "您好：我們收到了一筆使用此電子郵件註冊 Classcord 的請求。然而，此信箱已經在平台註冊過帳戶，我們無法為您重複建立帳戶。如果您忘記密碼，請點擊下方按鈕前往登入頁面，並使用「忘記密碼」功能重設密碼。",
+                    "前往登入頁面",
+                    appUrlProperties.getFrontend() + "/login",
+                    "如果您並未進行此操作，請忽略此郵件，您的帳戶目前非常安全。");
             return;
         }
 
@@ -212,6 +208,7 @@ public class AuthenticationService {
             }
 
         } catch (Exception e) {
+            log.error("發送密碼重設信件失敗，Email: {}", normalizedEmail, e);
             // 如果中途發生非預期異常，立刻手動移除 60 秒鎖，避免卡死正常使用者
             redisTemplate.delete(rateLimitKey);
             throw new RuntimeException("重設密碼憑證產生失敗", e);
