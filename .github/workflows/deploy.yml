@@ -49,7 +49,7 @@ jobs:
       - name: Checkout Code (to copy docker-compose.prod.yml)
         uses: actions/checkout@v6
 
-      # 將專案最新的 docker-compose.prod.yml 與資料庫初始化腳本複製到 Droplet 上
+      # 將專案最新的 docker-compose.prod.yml 與 Prometheus 設定檔複製到 Droplet 上
       - name: Copy Configuration Files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -57,7 +57,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: "docker-compose.prod.yml,src/test/resources/scripts/init-db.sql"
+          source: "docker-compose.prod.yml,prometheus/prometheus.yml"
           target: "/opt/classcord-backend"
 
       # 執行遠端部署指令
@@ -80,8 +80,8 @@ jobs:
             # 3. 拉取最新映像檔
             docker compose -f docker-compose.prod.yml pull backend
             
-            # 4. 重啟後端容器 (資料庫等外部服務保持運作，減少中斷時間)
-            docker compose -f docker-compose.prod.yml up -d backend
+            # 4. 啟動/更新所有容器 (只重啟有變更的 backend 與新加入的 prometheus/grafana)
+            docker compose -f docker-compose.prod.yml up -d
             
             # 5. 清理過期或未使用的 Docker Image 釋放主機空間
             docker image prune -f
