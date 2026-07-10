@@ -120,8 +120,8 @@ services:
     container_name: classcord_grafana_prod
     restart: always
     ports:
-      # 暴露 3000 Port，您可以直接用 http://您的伺服器IP:3000 登入控制台
-      - "3000:3000"
+      # 加上 127.0.0.1，拒絕所有來自外部公網 IP 的直接連線
+      - "127.0.0.1:3000:3000"
     volumes:
       - grafana_data_prod:/var/lib/grafana
     depends_on:
