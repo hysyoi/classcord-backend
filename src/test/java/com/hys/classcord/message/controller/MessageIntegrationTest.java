@@ -22,13 +22,17 @@ import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
 public class MessageIntegrationTest extends BaseIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
@@ -54,6 +58,7 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        tearDown();
         // 1. 初始化使用者。teacher 與 outsider 只在 setUp 中用於建置環境，故設為局部變數
         User teacher =
                 userRepository.save(
@@ -134,6 +139,15 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
 
         UUID messageId = UUID.fromString(objectMapper.readTree(resJson).get("id").asText());
         assertNotNull(messageId);
+
+        // 等待非同步落庫完成
+        long limit = System.currentTimeMillis() + 8000;
+        while (!messageRepository.existsById(messageId)) {
+            if (System.currentTimeMillis() > limit) {
+                throw new AssertionError("訊息在限時內未被非同步存儲: " + messageId);
+            }
+            Thread.sleep(50);
+        }
 
         // 1.2 學生在教材頻道發言 ➔ 失敗 (403 Forbidden)
         mockMvc.perform(
@@ -267,5 +281,11 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
                 jdbcTemplate.queryForObject(
                         "SELECT deleted FROM messages WHERE id = ?", Boolean.class, messageId);
         assertTrue(originalMsgDeleted);
+    }
+
+    @AfterEach
+    void tearDown() {
+        jdbcTemplate.execute(
+                "TRUNCATE TABLE messages, channels, server_members, servers, users, materials, material_chunks, ai_messages, ai_sessions, user_identities, material_questions, quizzes, quiz_questions, quiz_generation_jobs CASCADE");
     }
 }

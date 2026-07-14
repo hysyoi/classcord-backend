@@ -51,6 +51,16 @@ public class RabbitMQConfig {
     public static final String QUIZ_GEN_DLQ = "classcord.quiz.generation.dlq";
     public static final String ROUTING_KEY_QUIZ_GEN_DLK = "quiz.generation.dlk";
 
+    // =========================================================================
+    // 5. 訊息模組非同步落庫佇列常數 (Message Module Async DB Persistence)
+    // =========================================================================
+    public static final String MESSAGE_EXCHANGE = "classcord.message.exchange";
+    public static final String MESSAGE_SAVE_QUEUE = "classcord.message.save.queue";
+    public static final String ROUTING_KEY_MESSAGE_SAVE = "message.save";
+
+    public static final String MESSAGE_SAVE_DLQ = "classcord.message.save.dlq";
+    public static final String ROUTING_KEY_MESSAGE_SAVE_DLK = "message.save.dlk";
+
     /** 配置主要 Direct Exchange */
     @Bean
     public DirectExchange materialExchange() {
@@ -182,6 +192,43 @@ public class RabbitMQConfig {
     @Bean
     public Binding quizGenDlqBinding(Queue quizGenDlq, DirectExchange materialDlx) {
         return BindingBuilder.bind(quizGenDlq).to(materialDlx).with(ROUTING_KEY_QUIZ_GEN_DLK);
+    }
+
+    /** 配置訊息主要 Direct Exchange */
+    @Bean
+    public DirectExchange messageExchange() {
+        return new DirectExchange(MESSAGE_EXCHANGE);
+    }
+
+    /** 配置訊息非同步保存佇列 (綁定死信 Exchange) */
+    @Bean
+    public Queue messageSaveQueue() {
+        return QueueBuilder.durable(MESSAGE_SAVE_QUEUE)
+                .deadLetterExchange(MATERIAL_DLX)
+                .deadLetterRoutingKey(ROUTING_KEY_MESSAGE_SAVE_DLK)
+                .build();
+    }
+
+    /** 配置訊息保存死信佇列 (DLQ) */
+    @Bean
+    public Queue messageSaveDlq() {
+        return QueueBuilder.durable(MESSAGE_SAVE_DLQ).build();
+    }
+
+    /** 綁定訊息保存佇列至主要 Exchange */
+    @Bean
+    public Binding messageSaveBinding(Queue messageSaveQueue, DirectExchange messageExchange) {
+        return BindingBuilder.bind(messageSaveQueue)
+                .to(messageExchange)
+                .with(ROUTING_KEY_MESSAGE_SAVE);
+    }
+
+    /** 綁定訊息保存死信佇列至死信 Exchange */
+    @Bean
+    public Binding messageSaveDlqBinding(Queue messageSaveDlq, DirectExchange materialDlx) {
+        return BindingBuilder.bind(messageSaveDlq)
+                .to(materialDlx)
+                .with(ROUTING_KEY_MESSAGE_SAVE_DLK);
     }
 
     /** JSON 訊息轉譯器 */

@@ -1,5 +1,6 @@
 package com.hys.classcord.message.service;
 
+import com.github.f4b6a3.uuid.UuidCreator;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.channel.entity.Channel;
@@ -11,6 +12,7 @@ import com.hys.classcord.material.event.MaterialDeleteEvent;
 import com.hys.classcord.material.repository.MaterialRepository;
 import com.hys.classcord.material.service.ObjectStorageService;
 import com.hys.classcord.message.dto.CreateMessageRequest;
+import com.hys.classcord.message.dto.MessageSaveTask;
 import com.hys.classcord.message.dto.UpdateMessageRequest;
 import com.hys.classcord.message.entity.Message;
 import com.hys.classcord.message.enums.MessageErrorCode;
@@ -21,6 +23,7 @@ import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -59,8 +62,7 @@ public class MessageService {
     private final RedisScript<Long> safeDecrScript;
     private final RabbitTemplate rabbitTemplate;
 
-    /** 發送訊息 */
-    @Transactional
+    /** 發送訊息 (非同步排隊 & 預生成 ID) */
     public Message sendMessage(UUID userId, UUID channelId, CreateMessageRequest request) {
         // 1. 確認頻道存在
         Channel channel =
@@ -93,11 +95,52 @@ public class MessageService {
                                                 MessageErrorCode.INSUFFICIENT_PERMISSIONS,
                                                 "使用者不存在"));
 
-        // 5. 建立並儲存訊息
+        // 5. 預先生成 UUIDv7 ID 與時間戳
+        UUID messageId = UuidCreator.getTimeOrderedEpoch();
+        Instant now = Instant.now();
+
+        // 6. 包裝為落庫工作任務並發送至 RabbitMQ
+        MessageSaveTask task =
+                new MessageSaveTask(messageId, userId, channelId, request.content(), now);
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.MESSAGE_EXCHANGE, RabbitMQConfig.ROUTING_KEY_MESSAGE_SAVE, task);
+
+        // 7. 建立並返回記憶體中的暫時性實體 (包含產生的 ID 與時間戳)
         Message message =
                 Message.builder().channel(channel).user(user).content(request.content()).build();
+        message.setId(messageId);
+        message.setCreatedAt(now);
 
-        return messageRepository.save(message);
+        return message;
+    }
+
+    /** 異步落庫儲存訊息 (由 MessageConsumer 調用) */
+    @Transactional
+    public void saveMessageAsync(MessageSaveTask task) {
+        log.debug("開始非同步儲存訊息，ID: {}", task.messageId());
+
+        // 1. 確認頻道存在
+        Channel channel = channelRepository.findById(task.channelId()).orElse(null);
+        if (channel == null) {
+            log.error("非同步訊息儲存失敗：頻道 {} 不存在", task.channelId());
+            return;
+        }
+
+        // 2. 獲取使用者實體
+        User user = userRepository.findById(task.userId()).orElse(null);
+        if (user == null) {
+            log.error("非同步訊息儲存失敗：使用者 {} 不存在", task.userId());
+            return;
+        }
+
+        // 3. 建立並儲存實體，設定預先產生的 ID 與時間戳
+        Message message =
+                Message.builder().channel(channel).user(user).content(task.content()).build();
+        message.setId(task.messageId());
+        message.setCreatedAt(task.createdAt());
+
+        messageRepository.save(message);
+        log.debug("非同步訊息儲存成功，ID: {}", task.messageId());
     }
 
     // todo 在資料庫建立索引
