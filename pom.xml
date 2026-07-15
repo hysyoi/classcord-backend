@@ -9,7 +9,7 @@
         <relativePath/> </parent>
     <groupId>com.hys</groupId>
     <artifactId>classcord-backend</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>classcord-backend</name>
     <description>classcord-backend</description>
     <url/>
