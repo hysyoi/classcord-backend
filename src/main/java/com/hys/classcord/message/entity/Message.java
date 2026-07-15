@@ -2,9 +2,10 @@ package com.hys.classcord.message.entity;
 
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.channel.entity.Channel;
-import com.hys.classcord.core.entity.AuditableBaseEntity;
+import com.hys.classcord.core.entity.BaseEntity;
 import com.hys.classcord.material.entity.Material;
 import jakarta.persistence.*;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.*;
@@ -27,7 +28,7 @@ import org.hibernate.annotations.SQLRestriction;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class Message extends AuditableBaseEntity {
+public class Message extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -59,4 +60,16 @@ public class Message extends AuditableBaseEntity {
             cascade = CascadeType.ALL,
             orphanRemoval = true)
     private List<Material> materials = new ArrayList<>();
+
+    @Setter
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Override
+    protected void onCreate() {
+        super.onCreate();
+        if (this.createdAt == null) {
+            this.createdAt = Instant.now();
+        }
+    }
 }

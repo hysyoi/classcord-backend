@@ -81,15 +81,18 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
         assertNotNull(ownerMember);
         assertEquals(ServerRole.TEACHER, ownerMember.getRole());
 
-        // 驗證是否自動建立了預設頻道 (討論頻道 + 管理頻道)
+        // 驗證是否自動建立了預設頻道 (討論頻道 + 教材頻道 + 管理頻道)
         java.util.List<com.hys.classcord.channel.entity.Channel> channels =
                 channelRepository.findByServerIdOrderByPositionAsc(serverId);
-        assertEquals(2, channels.size());
+        assertEquals(3, channels.size());
         assertEquals("討論頻道", channels.get(0).getName());
         assertEquals(
                 com.hys.classcord.channel.enums.ChannelType.GENERAL, channels.get(0).getType());
-        assertEquals("管理頻道", channels.get(1).getName());
-        assertEquals(com.hys.classcord.channel.enums.ChannelType.ADMIN, channels.get(1).getType());
+        assertEquals("教材頻道", channels.get(1).getName());
+        assertEquals(
+                com.hys.classcord.channel.enums.ChannelType.MATERIAL, channels.get(1).getType());
+        assertEquals("管理頻道", channels.get(2).getName());
+        assertEquals(com.hys.classcord.channel.enums.ChannelType.ADMIN, channels.get(2).getType());
 
         // 2. 更改名稱 (學生改 ➔ 403 Forbidden)
         UpdateServerRequest updateReq = new UpdateServerRequest("New Name");

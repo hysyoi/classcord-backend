@@ -63,7 +63,7 @@ public class ServerService {
                 ServerMember.builder().server(server).user(owner).role(ServerRole.TEACHER).build();
         serverMemberRepository.save(member);
 
-        // 5. 建立預設頻道：討論頻道 (GENERAL) + 管理頻道 (ADMIN)
+        // 5. 建立預設頻道：討論頻道 (GENERAL) + 教材頻道 (MATERIAL) + 管理頻道 (ADMIN)
         Channel discussionChannel =
                 Channel.builder()
                         .server(server)
@@ -73,12 +73,21 @@ public class ServerService {
                         .build();
         channelRepository.save(discussionChannel);
 
+        Channel materialChannel =
+                Channel.builder()
+                        .server(server)
+                        .name("教材頻道")
+                        .type(ChannelType.MATERIAL)
+                        .position(1)
+                        .build();
+        channelRepository.save(materialChannel);
+
         Channel adminChannel =
                 Channel.builder()
                         .server(server)
                         .name("管理頻道")
                         .type(ChannelType.ADMIN)
-                        .position(1)
+                        .position(2)
                         .build();
         channelRepository.save(adminChannel);
 
