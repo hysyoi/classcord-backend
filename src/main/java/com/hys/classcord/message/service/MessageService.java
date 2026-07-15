@@ -119,21 +119,11 @@ public class MessageService {
     public void saveMessageAsync(MessageSaveTask task) {
         log.debug("開始非同步儲存訊息，ID: {}", task.messageId());
 
-        // 1. 確認頻道存在
-        Channel channel = channelRepository.findById(task.channelId()).orElse(null);
-        if (channel == null) {
-            log.error("非同步訊息儲存失敗：頻道 {} 不存在", task.channelId());
-            return;
-        }
+        // 1. 獲取頻道與使用者實體代理物件 (避免 SQL SELECT 查詢)
+        Channel channel = channelRepository.getReferenceById(task.channelId());
+        User user = userRepository.getReferenceById(task.userId());
 
-        // 2. 獲取使用者實體
-        User user = userRepository.findById(task.userId()).orElse(null);
-        if (user == null) {
-            log.error("非同步訊息儲存失敗：使用者 {} 不存在", task.userId());
-            return;
-        }
-
-        // 3. 建立並儲存實體，設定預先產生的 ID 與時間戳
+        // 2. 建立並儲存實體，設定預先產生的 ID 與時間戳
         Message message =
                 Message.builder().channel(channel).user(user).content(task.content()).build();
         message.setId(task.messageId());
