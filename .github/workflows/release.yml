@@ -51,7 +51,7 @@ jobs:
       - name: Bump Version
         run: |
           # 1. 取得目前 pom.xml 的版本（去除非數字與點以外的字樣）
-          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | sed 's/-SNAPSHOT//')
+          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -B --no-transfer-progress | sed 's/-SNAPSHOT//')
           echo "Current Version: $CURRENT_VERSION"
           
           # 2. 將版號拆解為 Major, Minor, Patch 三個變數
@@ -75,7 +75,7 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           
           # 4. 使用 Maven 套件修改 pom.xml 的版本號
-          mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
+          mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false -B --no-transfer-progress
 
       # 步驟 6：Commit & Push Version Bump
       - name: Commit & Push Version Bump
