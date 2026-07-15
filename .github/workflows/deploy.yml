@@ -2,7 +2,8 @@ name: Java Spring Boot CD (Auto Deploy to Droplet)
 
 on:
   push:
-    branches: [ main ] # 只有合併到 main 分支時才觸發自動部署
+    tags:
+      - 'v*' # 只有推送符合 v* 的 tag 時才觸發自動部署
 
 jobs:
   build-and-push-image:
@@ -37,7 +38,7 @@ jobs:
           # 將 Image 名稱轉為全小寫以防 GitHub Registry 報錯
           tags: |
             ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,7 +76,7 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
             # 2. 設定環境變數 Image Tag 供 docker-compose 讀取
-            export IMAGE_TAG=${{ github.sha }}
+            export IMAGE_TAG=${{ github.ref_name }}
             
             # 3. 拉取最新映像檔
             docker compose -f docker-compose.prod.yml pull backend
@@ -100,6 +101,6 @@ jobs:
           title: "🚀 ClassCord Backend CD 部署狀態"
           description: |
             **Commit 訊息**: ${{ github.event.head_commit.message }}
-            **版本 Tag**: `${{ github.sha }}`
+            **版本 Tag**: `${{ github.ref_name }}`
             **觸發者**: `${{ github.actor }}`
           nofail: true
