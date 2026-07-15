@@ -1,0 +1,94 @@
+name: Manual Bump & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: '選擇升級類型 (patch: 0.0.x | minor: 0.x.0 | major: x.0.0)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # 步驟 1：產生 Release Bot 的 App Token
+      - name: Generate Release Bot Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+
+      # 步驟 2：檢出專案程式碼（使用 Release Bot Token 取得寫入與繞過分支保護權限）
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      # 步驟 3：設定 JDK 21
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # 步驟 4：設定 Git 使用者為 Release Bot
+      - name: Configure Git User
+        run: |
+          # 取得 App 的帳號名稱，讓 Commit UI 能顯示正確的機器人圖示
+          git config --global user.name "classcord-release-bot[bot]"
+          git config --global user.email "4306448+classcord-release-bot[bot]@users.noreply.github.com"
+
+      # 步驟 5：計算新版本號並修改 pom.xml
+      - name: Bump Version
+        run: |
+          # 1. 取得目前 pom.xml 的版本（去除非數字與點以外的字樣）
+          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | sed 's/-SNAPSHOT//')
+          echo "Current Version: $CURRENT_VERSION"
+          
+          # 2. 將版號拆解為 Major, Minor, Patch 三個變數
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          
+          # 3. 依據輸入值計算新版號
+          BUMP_TYPE="${{ github.event.inputs.bump_type }}"
+          if [ "$BUMP_TYPE" = "major" ]; then
+            major=$((major + 1))
+            minor=0
+            patch=0
+          elif [ "$BUMP_TYPE" = "minor" ]; then
+            minor=$((minor + 1))
+            patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          
+          NEW_VERSION="${major}.${minor}.${patch}"
+          echo "New Version: $NEW_VERSION"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          
+          # 4. 使用 Maven 套件修改 pom.xml 的版本號
+          mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
+
+      # 步驟 6：Commit & Push Version Bump
+      - name: Commit & Push Version Bump
+        run: |
+          git add pom.xml
+          git commit -m "chore(release): bump version to v${{ env.NEW_VERSION }} [skip ci]"
+          git push origin main
+
+      # 步驟 7：自動產生 GitHub Release
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh release create "v${{ env.NEW_VERSION }}" \
+            --title "Release v${{ env.NEW_VERSION }}" \
+            --generate-notes
