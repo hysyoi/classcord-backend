@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*' # 只有推送符合 v* 的 tag 時才觸發自動部署
+  workflow_dispatch: # 允許手動觸發部署
 
 jobs:
   build-and-push-image:
