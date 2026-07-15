@@ -44,8 +44,8 @@ jobs:
       - name: Configure Git User
         run: |
           # 取得 App 的帳號名稱，讓 Commit UI 能顯示正確的機器人圖示
-          git config --global user.name "classcord-release-bot[bot]"
-          git config --global user.email "4306448+classcord-release-bot[bot]@users.noreply.github.com"
+          git config --global user.name "classcord-release[bot]"
+          git config --global user.email "4306448+classcord-release[bot]@users.noreply.github.com"
 
       # 步驟 5：計算新版本號並修改 pom.xml
       - name: Bump Version
