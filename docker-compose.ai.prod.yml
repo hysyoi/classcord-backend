@@ -11,6 +11,7 @@ services:
       # 透過 Droplet #1 的私有內網 IP 連線至 Nacos, Postgres, Redis, RabbitMQ
       - NACOS_SERVER_ADDR=${DROPLET1_PRIVATE_IP}:8848
       - NACOS_NAMESPACE=prod
+      - SENTINEL_DASHBOARD_ADDR=${DROPLET1_PRIVATE_IP}:8858
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
       - SPRING_DATASOURCE_URL=jdbc:postgresql://${DROPLET1_PRIVATE_IP}:5432/classcord?reWriteBatchedInserts=true

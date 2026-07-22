@@ -14,6 +14,10 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         namespace: ${NACOS_NAMESPACE:public}
         file-extension: yaml
+      sentinel:
+        transport:
+          dashboard: ${SENTINEL_DASHBOARD_ADDR:localhost:8858}
+          port: 8719
 
   flyway:
     enabled: true
