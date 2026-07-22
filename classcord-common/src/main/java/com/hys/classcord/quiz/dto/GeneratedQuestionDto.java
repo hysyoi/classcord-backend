@@ -6,5 +6,4 @@ public record GeneratedQuestionDto(
         String question,
         List<String> options,
         List<String> correctAnswer,
-        QuestionExplanation explanation
-) {}
+        QuestionExplanation explanation) {}

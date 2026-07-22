@@ -9,7 +9,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@FeignClient(name = "classcord-main-service", contextId = "materialClient", path = "/api/internal/materials")
+@FeignClient(
+        name = "classcord-main-service",
+        contextId = "materialClient",
+        path = "/api/internal/materials")
 public interface MaterialClient {
 
     @GetMapping("/{id}")
@@ -22,7 +25,5 @@ public interface MaterialClient {
     void markAsEnabled(@PathVariable UUID id);
 
     @PutMapping("/{id}/status/failed")
-    void markAsFailed(
-            @PathVariable("id") UUID id,
-            @RequestBody FailMaterialRequest request);
+    void markAsFailed(@PathVariable("id") UUID id, @RequestBody FailMaterialRequest request);
 }

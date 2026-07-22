@@ -88,8 +88,7 @@ public class AiAssistantService {
         InternalMaterialDto material = materialClient.getMaterial(materialId);
 
         if (material.status() != MaterialStatus.ENABLED) {
-            throw new AiException(
-                    AiErrorCode.AI_ASSISTANT_PROCESSING, "該教材尚未完成 AI 助教啟用，無法建立對話");
+            throw new AiException(AiErrorCode.AI_ASSISTANT_PROCESSING, "該教材尚未完成 AI 助教啟用，無法建立對話");
         }
 
         AiSession session = AiSession.builder().userId(userId).materialId(materialId).build();
@@ -110,8 +109,7 @@ public class AiAssistantService {
         AiSession session =
                 aiSessionRepository
                         .findById(sessionId)
-                        .orElseThrow(
-                                () -> new AiException(AiErrorCode.SESSION_NOT_FOUND));
+                        .orElseThrow(() -> new AiException(AiErrorCode.SESSION_NOT_FOUND));
 
         if (!session.getUserId().equals(userId)) {
             throw new AiException(AiErrorCode.SESSION_ACCESS_DENIED);
@@ -204,17 +202,16 @@ public class AiAssistantService {
         AiSession session =
                 aiSessionRepository
                         .findById(sessionId)
-                        .orElseThrow(
-                                () -> new AiException(AiErrorCode.SESSION_NOT_FOUND));
+                        .orElseThrow(() -> new AiException(AiErrorCode.SESSION_NOT_FOUND));
 
         if (!session.getUserId().equals(userId)) {
             throw new AiException(AiErrorCode.SESSION_ACCESS_DENIED, "您無權在此對話中發言");
         }
 
-        com.hys.classcord.common.dto.InternalMaterialDto material = materialClient.getMaterial(session.getMaterialId());
+        com.hys.classcord.common.dto.InternalMaterialDto material =
+                materialClient.getMaterial(session.getMaterialId());
         if (material.status() != MaterialStatus.ENABLED) {
-            throw new AiException(
-                    AiErrorCode.AI_ASSISTANT_PROCESSING, "該教材尚未完成 AI 助教啟用，暫無法回答");
+            throw new AiException(AiErrorCode.AI_ASSISTANT_PROCESSING, "該教材尚未完成 AI 助教啟用，暫無法回答");
         }
 
         // A. 效能與記憶體優化：先撈取前 9 條歷史訊息 (新到舊)
@@ -302,7 +299,8 @@ public class AiAssistantService {
     /** 在資料庫交易中將教材標記為啟用失敗。 */
     public void markMaterialAsFailed(UUID materialId, String errorMessage) {
         try {
-            materialClient.markAsFailed(materialId, new com.hys.classcord.common.dto.FailMaterialRequest(errorMessage));
+            materialClient.markAsFailed(
+                    materialId, new com.hys.classcord.common.dto.FailMaterialRequest(errorMessage));
             log.info("【AI 微服務】已通知 main-service 標記教材 {} 處理失敗: {}", materialId, errorMessage);
         } catch (Exception e) {
             log.error("通知 main-service 標記教材失敗時發生異常: ", e);

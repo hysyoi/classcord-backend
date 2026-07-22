@@ -8,13 +8,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hys.classcord.BaseIntegrationTest;
-import com.hys.classcord.client.QuizAiClient;
 import com.hys.classcord.auth.entity.User;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
 import com.hys.classcord.channel.entity.Channel;
 import com.hys.classcord.channel.enums.ChannelType;
 import com.hys.classcord.channel.repository.ChannelRepository;
+import com.hys.classcord.client.QuizAiClient;
 import com.hys.classcord.material.entity.Material;
 import com.hys.classcord.material.enums.MaterialStatus;
 import com.hys.classcord.material.repository.MaterialRepository;

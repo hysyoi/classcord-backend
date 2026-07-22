@@ -17,8 +17,11 @@ public class QuizAiConsumer {
 
     @RabbitListener(queues = RabbitMQConfig.QUIZ_GEN_QUEUE)
     public void handleQuizGenerationMessage(QuizGenerationMessage message) {
-        log.info("【AI 微服務 MQ Consumer】收到背景出題請求: jobId={}, materialId={}, count={}",
-                message.jobId(), message.materialId(), message.count());
+        log.info(
+                "【AI 微服務 MQ Consumer】收到背景出題請求: jobId={}, materialId={}, count={}",
+                message.jobId(),
+                message.materialId(),
+                message.count());
         quizAiService.generateQuestions(message);
     }
 }

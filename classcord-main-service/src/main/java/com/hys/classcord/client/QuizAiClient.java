@@ -6,7 +6,10 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(name = "classcord-ai-service", contextId = "quizAiClient", path = "/api/internal/ai/quizzes")
+@FeignClient(
+        name = "classcord-ai-service",
+        contextId = "quizAiClient",
+        path = "/api/internal/ai/quizzes")
 public interface QuizAiClient {
 
     @PostMapping("/doubt-analysis")

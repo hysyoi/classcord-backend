@@ -94,13 +94,13 @@ public class QuizAiService {
                 dtos = futures.stream().map(CompletableFuture::join).toList();
             }
 
-            quizClient.completeJob(jobId, new SaveGeneratedQuestionsRequest(jobId, materialId, dtos));
+            quizClient.completeJob(
+                    jobId, new SaveGeneratedQuestionsRequest(jobId, materialId, dtos));
             log.info("【AI 微服務】背景出題成功並已通知主服務: jobId={}, 共 {} 題", jobId, count);
 
         } catch (Exception e) {
             log.error("【AI 微服務】AI 出題背景生成任務失敗 jobId=" + jobId, e);
-            quizClient.markJobAsFailed(
-                    jobId, materialId, new FailMaterialRequest(e.getMessage()));
+            quizClient.markJobAsFailed(jobId, materialId, new FailMaterialRequest(e.getMessage()));
         }
     }
 
@@ -120,8 +120,7 @@ public class QuizAiService {
         }
         String userMessagesText = sb.toString();
 
-        var outputConverter =
-                new BeanOutputConverter<>(ClassDoubtResponse.class, quizObjectMapper);
+        var outputConverter = new BeanOutputConverter<>(ClassDoubtResponse.class, quizObjectMapper);
         String formatSpec = outputConverter.getFormat();
 
         String promptText;
@@ -149,7 +148,8 @@ public class QuizAiService {
 
         ClassDoubtResponse analysisResult = outputConverter.convert(response);
         if (analysisResult == null) {
-            throw new AiException(AiErrorCode.AI_ASSISTANT_PROCESSING, "無法將 AI 回傳內容轉換為 ClassDoubtResponse 格式");
+            throw new AiException(
+                    AiErrorCode.AI_ASSISTANT_PROCESSING, "無法將 AI 回傳內容轉換為 ClassDoubtResponse 格式");
         }
         return new ClassDoubtResponse(userMessages.size(), analysisResult.themes());
     }

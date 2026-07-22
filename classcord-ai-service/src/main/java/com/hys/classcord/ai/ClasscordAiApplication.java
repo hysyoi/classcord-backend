@@ -18,7 +18,9 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @EnableJpaAuditing
 @EnableAsync
 @ConfigurationPropertiesScan(basePackages = "com.hys.classcord")
-@SpringBootApplication(scanBasePackages = "com.hys.classcord", exclude = {UserDetailsServiceAutoConfiguration.class})
+@SpringBootApplication(
+        scanBasePackages = "com.hys.classcord",
+        exclude = {UserDetailsServiceAutoConfiguration.class})
 public class ClasscordAiApplication {
 
     public static void main(String[] args) {

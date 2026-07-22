@@ -28,7 +28,8 @@ public class InternalMaterialController {
 
     @GetMapping("/{id}")
     @Operation(summary = "獲取教材內部詳情", description = "供其他微服務查詢教材狀態與元數據")
-    public ResponseEntity<com.hys.classcord.common.dto.InternalMaterialDto> getMaterial(@PathVariable UUID id) {
+    public ResponseEntity<com.hys.classcord.common.dto.InternalMaterialDto> getMaterial(
+            @PathVariable UUID id) {
         return ResponseEntity.ok(materialService.getInternalMaterial(id));
     }
 
@@ -44,7 +45,8 @@ public class InternalMaterialController {
     @Operation(summary = "標記教材為 AI 處理失敗", description = "更新狀態為 FAILED 並記錄錯誤訊息")
     public ResponseEntity<Void> markAsFailed(
             @PathVariable UUID id,
-            @RequestBody(required = false) com.hys.classcord.common.dto.FailMaterialRequest request) {
+            @RequestBody(required = false)
+                    com.hys.classcord.common.dto.FailMaterialRequest request) {
         String errorMessage = request != null ? request.errorMessage() : null;
         materialService.markAsFailed(id, errorMessage);
         log.info("【內部 API】已成功標記教材 {} 狀態為 FAILED: {}", id, errorMessage);

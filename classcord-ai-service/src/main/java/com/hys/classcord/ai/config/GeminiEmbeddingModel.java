@@ -58,15 +58,19 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
 
         // 分批次處理（每批次最多 100 條，將 N 次 HTTP 往返降為 1 次）
         for (int i = 0; i < totalSize; i += BATCH_LIMIT) {
-            List<String> batchInstructions = instructions.subList(i, Math.min(i + BATCH_LIMIT, totalSize));
+            List<String> batchInstructions =
+                    instructions.subList(i, Math.min(i + BATCH_LIMIT, totalSize));
             List<Map<String, Object>> requestsList = new ArrayList<>();
 
             for (String text : batchInstructions) {
                 requestsList.add(
                         Map.of(
-                                "model", "models/" + modelName,
-                                "content", Map.of("parts", List.of(Map.of("text", text))),
-                                "outputDimensionality", 768));
+                                "model",
+                                "models/" + modelName,
+                                "content",
+                                Map.of("parts", List.of(Map.of("text", text))),
+                                "outputDimensionality",
+                                768));
             }
 
             Map<String, Object> body = Map.of("requests", requestsList);
@@ -75,17 +79,22 @@ public class GeminiEmbeddingModel extends AbstractEmbeddingModel {
             Map<String, Object> response =
                     restClient
                             .post()
-                            .uri("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":batchEmbedContents")
+                            .uri(
+                                    "https://generativelanguage.googleapis.com/v1beta/models/"
+                                            + modelName
+                                            + ":batchEmbedContents")
                             .header("x-goog-api-key", apiKey)
                             .body(body)
                             .retrieve()
                             .body(Map.class);
 
             if (response == null || !response.containsKey("embeddings")) {
-                throw new IllegalStateException("Google Gemini Batch Embedding API 回傳異常結果: " + response);
+                throw new IllegalStateException(
+                        "Google Gemini Batch Embedding API 回傳異常結果: " + response);
             }
 
-            List<Map<String, Object>> embeddingsList = (List<Map<String, Object>>) response.get("embeddings");
+            List<Map<String, Object>> embeddingsList =
+                    (List<Map<String, Object>>) response.get("embeddings");
             for (Map<String, Object> embeddingMap : embeddingsList) {
                 List<Double> values = (List<Double>) embeddingMap.get("values");
 

@@ -42,11 +42,7 @@ public class JwtUtils {
     public String getUserIdFromToken(String token) {
         try {
             Claims claims =
-                    Jwts.parser()
-                            .verifyWith(key)
-                            .build()
-                            .parseSignedClaims(token)
-                            .getPayload();
+                    Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
             return claims.getSubject();
         } catch (ExpiredJwtException e) {
             log.debug("JWT Token 已過期: {}", e.getMessage());

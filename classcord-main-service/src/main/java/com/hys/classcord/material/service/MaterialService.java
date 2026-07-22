@@ -421,12 +421,16 @@ public class MaterialService {
                         .orElseThrow(
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
-        UUID channelId = (material.getMessage() != null && material.getMessage().getChannel() != null)
-                ? material.getMessage().getChannel().getId()
-                : null;
-        UUID serverId = (material.getMessage() != null && material.getMessage().getChannel() != null && material.getMessage().getChannel().getServer() != null)
-                ? material.getMessage().getChannel().getServer().getId()
-                : null;
+        UUID channelId =
+                (material.getMessage() != null && material.getMessage().getChannel() != null)
+                        ? material.getMessage().getChannel().getId()
+                        : null;
+        UUID serverId =
+                (material.getMessage() != null
+                                && material.getMessage().getChannel() != null
+                                && material.getMessage().getChannel().getServer() != null)
+                        ? material.getMessage().getChannel().getServer().getId()
+                        : null;
 
         return com.hys.classcord.common.dto.InternalMaterialDto.builder()
                 .id(material.getId())
@@ -469,11 +473,15 @@ public class MaterialService {
         com.hys.classcord.message.entity.Message message = material.getMessage();
         UUID serverId = message.getChannel().getServer().getId();
         com.hys.classcord.message.dto.MessageResponse response =
-                com.hys.classcord.message.dto.MessageResponse.fromEntity(message, java.util.List.of(material));
+                com.hys.classcord.message.dto.MessageResponse.fromEntity(
+                        message, java.util.List.of(material));
 
         try {
             messagingTemplate.convertAndSend("/topic/servers/" + serverId + "/messages", response);
-            log.info("已透過 WebSocket 廣播教材狀態更新: materialId={}, status={}", material.getId(), material.getStatus());
+            log.info(
+                    "已透過 WebSocket 廣播教材狀態更新: materialId={}, status={}",
+                    material.getId(),
+                    material.getStatus());
         } catch (Exception e) {
             log.error("廣播教材狀態更新失敗：", e);
         }

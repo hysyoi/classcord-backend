@@ -7,9 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
-import org.springframework.scheduling.annotation.EnableAsync;
-
 import org.springframework.data.web.config.EnableSpringDataWebSupport;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 @SpringBootApplication(exclude = {UserDetailsServiceAutoConfiguration.class}) // 強行關閉預設密碼建置機制
 @EnableAsync // 開啟 Spring 的非同步任務支援
@@ -17,7 +16,8 @@ import org.springframework.data.web.config.EnableSpringDataWebSupport;
 @EnableDiscoveryClient
 @EnableFeignClients
 @ConfigurationPropertiesScan // 啟動全局的 @ConfigurationProperties 自動掃描與註冊
-@EnableSpringDataWebSupport(pageSerializationMode = EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)
+@EnableSpringDataWebSupport(
+        pageSerializationMode = EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)
 public class ClasscordMainApplication {
 
     public static void main(String[] args) {

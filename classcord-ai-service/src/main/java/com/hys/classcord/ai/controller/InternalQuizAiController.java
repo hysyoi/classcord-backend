@@ -9,7 +9,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "內部 AI 測驗與疑問分析 API", description = "僅供微服務內部 (main-service -> ai-service) 調用之 AI 測驗與班級疑難點分析端點")
+@Tag(
+        name = "內部 AI 測驗與疑問分析 API",
+        description = "僅供微服務內部 (main-service -> ai-service) 調用之 AI 測驗與班級疑難點分析端點")
 @Slf4j
 @RestController
 @RequestMapping("/api/internal/ai/quizzes")

@@ -6,7 +6,6 @@ import java.util.UUID;
 
 public record AiSessionResponse(UUID id, UUID materialId, Instant createdAt) {
     public static AiSessionResponse fromEntity(AiSession entity) {
-        return new AiSessionResponse(
-                entity.getId(), entity.getMaterialId(), entity.getCreatedAt());
+        return new AiSessionResponse(entity.getId(), entity.getMaterialId(), entity.getCreatedAt());
     }
 }

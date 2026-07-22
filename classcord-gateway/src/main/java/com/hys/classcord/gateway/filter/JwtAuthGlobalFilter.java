@@ -24,10 +24,8 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * Gateway 網關全域 JWT 鑑權過濾器
- * 1. 支援 CORS Preflight (OPTIONS) 自動放行
- * 2. 嚴格防止外部請求防篡改標頭注入 (Stripping untrusted X-User-Id / X-User-Email headers)
- * 3. 記憶體高速簽名驗證與 Claims 標頭注入透傳
+ * Gateway 網關全域 JWT 鑑權過濾器 1. 支援 CORS Preflight (OPTIONS) 自動放行 2. 嚴格防止外部請求防篡改標頭注入 (Stripping
+ * untrusted X-User-Id / X-User-Email headers) 3. 記憶體高速簽名驗證與 Claims 標頭注入透傳
  */
 @Slf4j
 @Component
@@ -48,8 +46,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
                     "/actuator/**",
                     "/ws/**",
                     "/v1/materials/questions/tasks/*/stream",
-                    "/error"
-            );
+                    "/error");
 
     public JwtAuthGlobalFilter(@Value("${app.jwt.secret-key}") String secretString) {
         this.key = Keys.hmacShaKeyFor(secretString.getBytes(StandardCharsets.UTF_8));
@@ -84,11 +81,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         // 4. 高速驗證 JWT Token 簽名與過期時間
         Claims claims;
         try {
-            claims = Jwts.parser()
-                    .verifyWith(key)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
+            claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
         } catch (Exception e) {
             log.warn("【Gateway 鑑權防禦】無效或過期的 JWT Token: path={}, error={}", path, e.getMessage());
             return unauthorizedResponse(exchange, "認證失效，請重新登入");
@@ -98,14 +91,16 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         String email = claims.get("email", String.class);
 
         // 5. 生產級安全最佳實踐：先抹除外網客戶端可能偽造的 X-User-Id 標頭，再注入驗證通過的合法身份
-        ServerHttpRequest mutatedRequest = request.mutate()
-                .headers(httpHeaders -> {
-                    httpHeaders.remove("X-User-Id");
-                    httpHeaders.remove("X-User-Email");
-                })
-                .header("X-User-Id", userId != null ? userId : "")
-                .header("X-User-Email", email != null ? email : "")
-                .build();
+        ServerHttpRequest mutatedRequest =
+                request.mutate()
+                        .headers(
+                                httpHeaders -> {
+                                    httpHeaders.remove("X-User-Id");
+                                    httpHeaders.remove("X-User-Email");
+                                })
+                        .header("X-User-Id", userId != null ? userId : "")
+                        .header("X-User-Email", email != null ? email : "")
+                        .build();
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }

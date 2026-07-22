@@ -13,5 +13,4 @@ public record InternalMaterialDto(
         String fileType,
         Long fileSize,
         UUID serverId,
-        UUID channelId
-) {}
+        UUID channelId) {}

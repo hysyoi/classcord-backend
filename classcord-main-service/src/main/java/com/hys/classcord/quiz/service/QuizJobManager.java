@@ -29,8 +29,8 @@ public class QuizJobManager {
     private final SsePushManager ssePushManager;
 
     /**
-     * 在獨立的新交易 (Propagation.REQUIRES_NEW) 中更新 Job 狀態，並同步推送 SSE 進度事件。 
-     * 這能保障即使主出題交易阻礙，Job 的 FAILED 狀態與錯誤訊息依然能被寫入資料庫並推送給前端。
+     * 在獨立的新交易 (Propagation.REQUIRES_NEW) 中更新 Job 狀態，並同步推送 SSE 進度事件。 這能保障即使主出題交易阻礙，Job 的 FAILED
+     * 狀態與錯誤訊息依然能被寫入資料庫並推送給前端。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateJobStatusAndPushRequiresNew(
@@ -53,22 +53,29 @@ public class QuizJobManager {
 
     /** 接收從 AI 微服務回傳的題目，在資料庫交易中完成實體轉換、批次儲存，並更新 Job 為 COMPLETED */
     @Transactional
-    public void saveGeneratedQuestionsAndComplete(UUID jobId, SaveGeneratedQuestionsRequest request) {
-        Material material = materialRepository.findById(request.materialId())
-                .orElseThrow(() -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
+    public void saveGeneratedQuestionsAndComplete(
+            UUID jobId, SaveGeneratedQuestionsRequest request) {
+        Material material =
+                materialRepository
+                        .findById(request.materialId())
+                        .orElseThrow(
+                                () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
-        List<MaterialQuestion> questions = request.questions().stream()
-                .map(dto -> MaterialQuestion.builder()
-                        .material(material)
-                        .type(QuestionType.SINGLE_CHOICE)
-                        .question(dto.question())
-                        // 防禦性清洗，清除 "A. ", "B. " 前綴，確保資料格式整齊
-                        .options(sanitizeOptions(dto.options()))
-                        .correctAnswer(dto.correctAnswer())
-                        .explanation(dto.explanation())
-                        .isDeleted(false)
-                        .build())
-                .toList();
+        List<MaterialQuestion> questions =
+                request.questions().stream()
+                        .map(
+                                dto ->
+                                        MaterialQuestion.builder()
+                                                .material(material)
+                                                .type(QuestionType.SINGLE_CHOICE)
+                                                .question(dto.question())
+                                                // 防禦性清洗，清除 "A. ", "B. " 前綴，確保資料格式整齊
+                                                .options(sanitizeOptions(dto.options()))
+                                                .correctAnswer(dto.correctAnswer())
+                                                .explanation(dto.explanation())
+                                                .isDeleted(false)
+                                                .build())
+                        .toList();
 
         saveQuestionsAndCompleteJob(jobId, request.materialId(), questions);
     }
