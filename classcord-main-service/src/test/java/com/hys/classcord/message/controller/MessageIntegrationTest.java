@@ -286,6 +286,6 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
     @AfterEach
     void tearDown() {
         jdbcTemplate.execute(
-                "TRUNCATE TABLE messages, channels, server_members, servers, users, materials, material_chunks, ai_messages, ai_sessions, user_identities, material_questions, quizzes, quiz_questions, quiz_generation_jobs CASCADE");
+                "TRUNCATE TABLE messages, channels, server_members, servers, users, materials, user_identities, material_questions, quizzes, quiz_questions, quiz_generation_jobs CASCADE");
     }
 }
