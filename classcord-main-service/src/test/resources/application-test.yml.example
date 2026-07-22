@@ -1,4 +1,12 @@
 spring:
+  cloud:
+    nacos:
+      config:
+        enabled: false
+        import-check:
+          enabled: false
+      discovery:
+        enabled: false
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/classcord}
     driver-class-name: org.postgresql.Driver
