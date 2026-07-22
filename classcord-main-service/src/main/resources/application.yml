@@ -4,9 +4,9 @@ server:
 spring:
   application:
     name: classcord-main-service
-
-  profiles:
-    active: local
+#
+#  profiles:
+#    active: local
 
   flyway:
     enabled: true
@@ -88,11 +88,12 @@ spring:
         table-name: material_chunks
         initialize-schema: false # 關閉自動建表，使用手動建的 schema
 
+  # 對接雲端 Resend 服務
   mail:
-    host: smtp.gmail.com
+    host: smtp.resend.com
     port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    username: resend
+    password: ${SPRING_MAIL_PASSWORD}
     properties:
       mail:
         smtp:
