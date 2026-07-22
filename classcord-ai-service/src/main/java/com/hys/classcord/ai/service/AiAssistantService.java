@@ -15,6 +15,7 @@ import com.hys.classcord.ai.strategy.RagStrategyFactory;
 import com.hys.classcord.common.dto.InternalMaterialDto;
 import com.hys.classcord.core.config.RabbitMQConfig;
 import com.hys.classcord.material.enums.MaterialStatus;
+import io.seata.spring.annotation.GlobalTransactional;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -70,6 +71,7 @@ public class AiAssistantService {
     @Value("classpath:prompts/rag-prompt.st")
     private Resource promptResource;
 
+    @GlobalTransactional(name = "enable-ai-assistant", rollbackFor = Exception.class)
     public void enableAiAssistant(UUID materialId) {
         // 1. 透過 OpenFeign 遠程呼叫 main-service 進行悲觀鎖驗證與狀態更新
         materialClient.markAsProcessing(materialId);

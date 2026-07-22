@@ -19,6 +19,22 @@ spring:
           dashboard: ${SENTINEL_DASHBOARD_ADDR:localhost:8858}
           port: 8719
 
+seata:
+  enabled: true
+  tx-service-group: default_tx_group
+  service:
+    vgroup-mapping:
+      default_tx_group: default
+    grouplist:
+      default: ${SEATA_SERVER_ADDR:localhost:8091}
+  registry:
+    type: nacos
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      namespace: ${NACOS_NAMESPACE:public}
+      group: DEFAULT_GROUP
+      application: seata-server
+
   flyway:
     enabled: true
     baseline-on-migrate: true

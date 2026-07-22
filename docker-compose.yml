@@ -115,6 +115,15 @@ services:
     ports:
       - "8858:8858"
 
+  # 7. Seata 分散式事務協調器 (Apache Seata Server)
+  seata-server:
+    image: apache/seata-server:2.0.0
+    container_name: classcord_seata
+    restart: always
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+
   # 7. Prometheus 數據採集與時序資料庫 (Port 9090)
   prometheus:
     image: prom/prometheus:latest
