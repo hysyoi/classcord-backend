@@ -38,3 +38,6 @@ build/
 **/src/test/resources/application-test.yml
 .env
 *.html
+
+### Deployment & Configs ###
+nginx/

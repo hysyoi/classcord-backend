@@ -1,0 +1,167 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: classcord-main-service
+
+  profiles:
+    active: local
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/classcord?reWriteBatchedInserts=true}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  threads:
+    virtual:
+      enabled: true # 開啟 Spring Boot 的虛擬執行緒支持
+
+  jpa:
+    open-in-view: false # 關閉 Open Session in View，防止資料庫連線洩漏與隱蔽的 N+1
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_updates: true
+        order_inserts: true # 由於使用 UUID v7，也能享受批次 INSERT 的效能優化
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: 6379
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3         # 最多重試 3 次
+          initial-interval: 1000ms # 第一次重試等 1 秒
+          multiplier: 2.0         # 每次重試加倍等待 (1s -> 2s -> 4s)
+          max-interval: 5000ms    # 最長等待 5 秒
+
+  # 將 OAuth2 從 local 移入主設定，確保所有 Profile 皆能正常讀取環境變數
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+          discord:
+            client-id: ${DISCORD_CLIENT_ID}
+            client-secret: ${DISCORD_CLIENT_SECRET}
+
+  # Spring AI 導向 Google Gemini (使用 OpenAI 相容端點)
+  ai:
+    openai:
+      api-key: ${GEMINI_API_KEY}
+      base-url: https://generativelanguage.googleapis.com/v1beta/openai/
+      chat:
+        options:
+          model: gemini-2.5-flash     # 問答模型
+      embedding:
+        options:
+          model: gemini-embedding-001    # 向量模型：使用 Google 官方 768 維度之 gemini-embedding-001
+    # Spring AI 改用 material_chunks 表
+    vectorstore:
+      pgvector:
+        table-name: material_chunks
+        initialize-schema: false # 關閉自動建表，使用手動建的 schema
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+logging:
+  level:
+    root: INFO
+    com.hys.classcord: DEBUG
+    org.hibernate.SQL: DEBUG  # 在主控台顯示 SQL 語法
+    org.hibernate.orm.jdbc.bind: TRACE # 顯示 SQL 傳入的真實變數數值
+
+app:
+  ai:
+    limit:
+      chat-daily-max: 400
+      embedding-daily-max: 3000
+  turnstile:
+    enabled: ${TURNSTILE_ENABLED:true}
+    site-key: ${TURNSTILE_SITE_KEY:1x00000000000000000000AA}
+    secret-key: ${TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA}
+  jwt: # 可能也可以抽成一個properties類
+    secret-key: ${JWT_SECRET_KEY}
+    expiration-ms: 86400000 # 24小時以毫秒計算
+  urls:
+    # 支援透過環境變數覆蓋
+    backend: ${APP_BACKEND_URL:http://localhost:8080}
+    frontend: ${APP_FRONTEND_URL:http://localhost:5173}
+  mail:
+    from-email: ${MAIL_FROM_EMAIL:noreply@email.com}
+  # 儲存相關設定
+  storage:
+    endpoint: ${S3_ENDPOINT}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+    bucket-name: ${S3_BUCKET_NAME}
+    public-url: ${S3_PUBLIC_URL}
+    # 限制額度 (單位：Bytes)
+    system-quota: 9126805504   # 8.5 GB
+    server-quota: 524288000    # 500 MB
+  # CORS 允許的來源白名單
+  cors:
+    # Local 開發預設：允許本地 localhost 前端（IntelliJ IDEA file:// 會以 null origin 發送請求）
+    # 使用逗號分隔字串，配合 @Value 注入 List<String>
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:63342}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  paths-to-exclude:
+    - /api/internal/**
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 10000
