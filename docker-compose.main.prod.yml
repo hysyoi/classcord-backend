@@ -94,6 +94,9 @@ services:
       - STORE_MODE=redis
       - SEATA_STORE_REDIS_SINGLE_HOST=redis
       - SEATA_STORE_REDIS_SINGLE_PORT=6379
+      - JVM_XMS=128m
+      - JVM_XMX=256m
+      - JVM_MaxMetaspaceSize=128m
     depends_on:
       redis:
         condition: service_healthy
