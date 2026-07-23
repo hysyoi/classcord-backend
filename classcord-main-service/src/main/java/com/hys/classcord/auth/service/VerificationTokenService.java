@@ -46,4 +46,22 @@ public class VerificationTokenService {
 
         return value;
     }
+
+    /** 僅驗證並取出 Value (不銷毀 Token，用於等待 DB 事務 Commit 後再銷毀的場景) */
+    public String verify(String purpose, String token) {
+        String redisKey = "AUTH:" + purpose + ":" + token;
+        String value = redisTemplate.opsForValue().get(redisKey);
+
+        if (value == null) {
+            throw new AuthException(AuthErrorCode.TOKEN_EXPIRED_OR_INVALID);
+        }
+
+        return value;
+    }
+
+    /** 單獨銷毀 Token */
+    public void consume(String purpose, String token) {
+        String redisKey = "AUTH:" + purpose + ":" + token;
+        redisTemplate.delete(redisKey);
+    }
 }

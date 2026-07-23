@@ -20,6 +20,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /** 身份驗證(Authentication) */
 @Slf4j
@@ -95,13 +97,6 @@ public class AuthenticationService {
             // 送進萬用驗證中心（效期 24 小時）
             String token = tokenService.createToken("VERIFY_EMAIL", jsonStr, 1440);
 
-            // 輸出測試啟動連結
-            // String activateLink = "http://localhost:8080/v1/auth/activate?token=" + token;
-            // System.out.println("\n==================================================");
-            // System.out.println("【Classcord 帳號啟用信】模擬寄出成功！");
-            // System.out.println(activateLink);
-            // System.out.println("==================================================\n");
-
             String activateLink =
                     appUrlProperties.getBackend() + "/v1/auth/activate?token=" + token;
 
@@ -115,18 +110,22 @@ public class AuthenticationService {
                     activateLink,
                     "⏰ 本開通連結於 24 小時內有效，逾期需重新註冊。");
 
-        } catch (JsonProcessingException e) {
-            // 如果後續序列化失敗，為了避免使用者被卡死 60 秒，實務上可以把鎖手動刪除
+        } catch (Exception e) {
+            log.error("發送註冊驗證信件失敗，Email: {}", normalizedEmail, e);
+            // 無論是序列化還是寄信失敗，手動移除 60 秒防刷鎖，避免卡死使用者
             redisTemplate.delete(rateLimitKey);
-            throw new RuntimeException("註冊資料處理異常，無法序列化", e);
+            // if (e instanceof AuthException) {
+            //     throw (AuthException) e;
+            // }
+            throw new RuntimeException("註冊資料處理或郵件寄送異常", e);
         }
     }
 
     /** 使用者點擊驗證信連結（正式寫入 DB ） */
     @Transactional
     public void activateUser(String token) {
-        // 1. 從驗證中心取出 JSON 字串（由底層 verifyAndConsume 確保沒過期，且用完立刻在 Redis 銷毀）
-        String jsonStr = tokenService.verifyAndConsume("VERIFY_EMAIL", token);
+        // 1. 從驗證中心讀取驗證 JSON 字串（先不銷毀 Token，防止 DB 寫入失敗導致 Token 提前失效）
+        String jsonStr = tokenService.verify("VERIFY_EMAIL", token);
 
         try {
             // 2. 反序列化回 Lombok DTO
@@ -157,7 +156,21 @@ public class AuthenticationService {
 
             log.info("🎉 帳號驗證成功！數據正式落地 DB，歡迎新成員：{}", pendingUser.getUsername());
 
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // 4. 使用 TransactionSynchronization 確保 DB 事務確定 Commit 後才銷毀 Redis Token
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(
+                        new TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                tokenService.consume("VERIFY_EMAIL", token);
+                                log.info("【Token 銷毀】帳號開通完成，驗證 Token 已從 Redis 移除");
+                            }
+                        });
+            } else {
+                tokenService.consume("VERIFY_EMAIL", token);
+            }
+
+        } catch (JsonProcessingException e) {
             throw new RuntimeException("開通帳號失敗，資料還原異常", e);
         }
     }
@@ -218,9 +231,8 @@ public class AuthenticationService {
     /** 忘記密碼階段二：持有效 Token 正式覆蓋舊密碼（落地 DB ） */
     @Transactional // 涉及修改 DB 資料，必須開啟事務
     public void executePasswordReset(String token, String rawNewPassword) {
-        // 1. 去驗證中心核對 Token
-        // （底層 verifyAndConsume 會自動去 Redis 取出當初存的 Email，且用完即刪，確保連結只能用一次！）
-        String email = tokenService.verifyAndConsume("RESET_PASSWORD", token);
+        // 1. 去驗證中心核對 Token (先不銷毀 Token，防止 DB 操作失敗導致 Token 提前失效)
+        String email = tokenService.verify("RESET_PASSWORD", token);
 
         // 2. 透過 Email 找到對應的主用戶
         User user =
@@ -239,10 +251,24 @@ public class AuthenticationService {
         String encodedNewPassword = passwordEncoder.encode(rawNewPassword);
         localIdentity.setPasswordHash(encodedNewPassword);
 
-        // 5. 儲存變更（也可以不寫，Spring 事務結束會自動 Dirty Checking Flush，但寫了語意更明確）
+        // 5. 儲存變更
         userIdentityRepository.save(localIdentity);
 
-        log.info("🎉 使用者 {} 的密碼已順利重設成功！舊連結已自動失效。", user.getUsername());
+        log.info("🎉 使用者 {} 的密碼已順利重設成功！", user.getUsername());
+
+        // 6. 在 DB 事務 100% Commit 後才銷毀 Token
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            tokenService.consume("RESET_PASSWORD", token);
+                            log.info("【Token 銷毀】密碼重設完成，驗證 Token 已從 Redis 移除");
+                        }
+                    });
+        } else {
+            tokenService.consume("RESET_PASSWORD", token);
+        }
     }
 
     // /** 一般帳密註冊 */

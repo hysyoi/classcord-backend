@@ -21,6 +21,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 public class AuthenticationIntegrationTest extends BaseIntegrationTest {
 
@@ -77,6 +79,12 @@ public class AuthenticationIntegrationTest extends BaseIntegrationTest {
         // 模擬 GET /v1/auth/activate?token=xxx
         mockMvc.perform(get("/v1/auth/activate").param("token", token))
                 .andExpect(status().isFound()); // 驗證回傳 302 Found (重導向至前端)
+
+        // 觸發在測試交易中註冊的 afterCommit 回呼以銷毀 Redis Token
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+        }
 
         // --- 階段四：驗證資料庫落地與 Redis 銷毀 ---
         // 1. 驗證資料庫中是否成功建立了 User 記錄
