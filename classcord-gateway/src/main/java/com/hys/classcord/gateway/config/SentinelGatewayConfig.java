@@ -46,7 +46,7 @@ public class SentinelGatewayConfig {
     /** 配置 Sentinel 網關全局過濾器 (最高優先級) 讓所有進入 Gateway 的 HTTP 請求都會先經過 Sentinel 的流量過濾與統計 */
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    public GlobalFilter sentinelGatewayFilter() {
+    public GlobalFilter customSentinelGatewayFilter() {
         return new SentinelGatewayFilter();
     }
 

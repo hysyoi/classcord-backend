@@ -5,6 +5,9 @@ spring:
   application:
     name: classcord-main-service
 
+  config:
+    import: "optional:nacos:${spring.application.name}.yaml"
+
   cloud:
     nacos:
       discovery:
@@ -14,6 +17,8 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
         namespace: ${NACOS_NAMESPACE:public}
         file-extension: yaml
+        import-check:
+          enabled: false
       sentinel:
         transport:
           dashboard: ${SENTINEL_DASHBOARD_ADDR:localhost:8858}
@@ -116,7 +121,7 @@ logging:
   level:
     root: INFO
     com.hys.classcord: DEBUG
-    org.hibernate.SQL: DEBUG  # 在主控台顯示 SQL 語法
+    org.hibernate.SQL: DEBUG # 在主控台顯示 SQL 語法
     org.hibernate.orm.jdbc.bind: TRACE # 顯示 SQL 傳入的真實變數數值
 
 app:
@@ -183,9 +188,5 @@ seata:
     grouplist:
       default: ${SEATA_SERVER_ADDR:localhost:8091}
   registry:
-    type: nacos
-    nacos:
-      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
-      namespace: ${NACOS_NAMESPACE:public}
-      group: DEFAULT_GROUP
-      application: seata-server
+    type: file
+
