@@ -15,7 +15,10 @@ import com.hys.classcord.ai.strategy.RagStrategyFactory;
 import com.hys.classcord.common.dto.InternalMaterialDto;
 import com.hys.classcord.core.config.RabbitMQConfig;
 import com.hys.classcord.material.enums.MaterialStatus;
+import io.seata.core.context.RootContext;
 import io.seata.spring.annotation.GlobalTransactional;
+import io.seata.tm.api.transaction.TransactionHookAdapter;
+import io.seata.tm.api.transaction.TransactionHookManager;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -44,8 +47,6 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -80,10 +81,10 @@ public class AiAssistantService {
 
         // todo 扣除ai點數
 
-        // 2. 發送 MQ 消息至 RabbitMQ (使用 TransactionSynchronization 在事務 Commit 後才推播)
-        if (TransactionSynchronizationManager.isActualTransactionActive()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
+        // 2. 發送 MQ 消息至 RabbitMQ
+        if (RootContext.inGlobalTransaction()) {
+            TransactionHookManager.registerHook(
+                    new TransactionHookAdapter() {
                         @Override
                         public void afterCommit() {
                             rabbitTemplate.convertAndSend(
@@ -91,7 +92,7 @@ public class AiAssistantService {
                                     RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
                                     materialId.toString());
                             log.info(
-                                    "【事務】已成功標記處理中並推送 RAG 處理消息至 RabbitMQ: materialId={}",
+                                    "【Seata全局事務】已成功標記處理中並推送 RAG 處理消息至 RabbitMQ: materialId={}",
                                     materialId);
                         }
                     });
