@@ -37,4 +37,9 @@ build/
 **/src/main/resources/application-dev.yml
 **/src/test/resources/application-test.yml
 .env
+.env-prod/
+*.env
 *.html
+
+### Deployment & Configs ###
+nginx/

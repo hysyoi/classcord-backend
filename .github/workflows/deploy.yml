@@ -1,4 +1,4 @@
-name: Java Spring Boot CD (Auto Deploy to Droplet)
+name: Java Spring Cloud CD (Auto Deploy to 2 Droplets)
 
 on:
   push:
@@ -7,21 +7,22 @@ on:
   workflow_dispatch: # 允許手動觸發部署
 
 jobs:
-  build-and-push-image:
+  # ==========================================================
+  # 任務 1：構建並推播 3 個微服務 Docker Images 至 GHCR
+  # ==========================================================
+  build-and-push-images:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # 需要寫入 GHCR 的權限
+      packages: write
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
 
-      # 使用 Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 登入 GitHub Container Registry (GHCR)
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -29,79 +30,136 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 編譯並推播 Docker Image
-      - name: Build and Push Docker Image
+      # 1.1 構建 classcord-gateway
+      - name: Build & Push Gateway Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./classcord-gateway/Dockerfile
           push: true
-          # 將 Image 名稱轉為全小寫以防 GitHub Registry 報錯
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/classcord-gateway:latest
+            ghcr.io/${{ github.repository_owner }}/classcord-gateway:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy-to-droplet:
-    needs: build-and-push-image
-    runs-on: ubuntu-latest
+      # 1.2 構建 classcord-main-service
+      - name: Build & Push Main Service Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./classcord-main-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/classcord-main-service:latest
+            ghcr.io/${{ github.repository_owner }}/classcord-main-service:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+      # 1.3 構建 classcord-ai-service
+      - name: Build & Push AI Service Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./classcord-ai-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/classcord-ai-service:latest
+            ghcr.io/${{ github.repository_owner }}/classcord-ai-service:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================================
+  # 任務 2：部署 Droplet #1 (主業務與基礎設施機)
+  # ==========================================================
+  deploy-to-droplet1:
+    needs: build-and-push-images
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code (to copy docker-compose.prod.yml)
+      - name: Checkout Code
         uses: actions/checkout@v6
 
-      # 將專案最新的 docker-compose.prod.yml 與 Prometheus 設定檔複製到 Droplet 上
       - name: Copy Configuration Files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_HOST_DROPLET1 || secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: "docker-compose.prod.yml,prometheus/prometheus.yml"
-          target: "/opt/classcord-backend"
+          source: "docker-compose.main.prod.yml,prometheus/prometheus.yml,scripts/init-db.prod.sql"
+          target: "/opt/classcord-main"
 
-      # 執行遠端部署指令
-      - name: SSH to Droplet and Deploy
+      - name: SSH to Droplet #1 and Deploy Main Stack
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_HOST_DROPLET1 || secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
-            cd /opt/classcord-backend
-            
-            # 1. 登入 GHCR (以利拉取私有 Image)
+            cd /opt/classcord-main
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            
-            # 2. 設定環境變數 Image Tag 供 docker-compose 讀取
             export IMAGE_TAG=${{ github.ref_name }}
-            
-            # 3. 拉取最新映像檔
-            docker compose -f docker-compose.prod.yml pull backend
-            
-            # 4. 啟動/更新所有容器 (只重啟有變更的 backend 與新加入的 prometheus/grafana)
-            docker compose -f docker-compose.prod.yml up -d
-            
-            # 5. 清理過期或未使用的 Docker Image 釋放主機空間
+            docker compose -f docker-compose.main.prod.yml pull
+            docker compose -f docker-compose.main.prod.yml up -d
             docker image prune -f
-            
-            # 6. 登出 GHCR 安全撤銷憑證
             docker logout ghcr.io
 
-      # 發送 Discord 通知 (部署成功與失敗皆會發送)
+  # ==========================================================
+  # 任務 3：部署 Droplet #2 (AI 獨立運算機)
+  # ==========================================================
+  deploy-to-droplet2:
+    needs: build-and-push-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Copy AI Configuration File via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST_DROPLET2 || secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          source: "docker-compose.ai.prod.yml"
+          target: "/opt/classcord-ai"
+
+      - name: SSH to Droplet #2 and Deploy AI Stack
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST_DROPLET2 || secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script: |
+            cd /opt/classcord-ai
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export IMAGE_TAG=${{ github.ref_name }}
+            export DROPLET1_PRIVATE_IP=${{ secrets.DROPLET1_PRIVATE_IP }}
+            docker compose -f docker-compose.ai.prod.yml pull
+            docker compose -f docker-compose.ai.prod.yml up -d
+            docker image prune -f
+            docker logout ghcr.io
+
+  # ==========================================================
+  # 任務 4：雙機部署狀態 Discord 通知
+  # ==========================================================
+  notify:
+    needs: [deploy-to-droplet1, deploy-to-droplet2]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
       - name: Send Discord Notification
-        if: always()
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_CD_WEBHOOK_URL }}
           status: ${{ job.status }}
-          content: "<@${{ secrets.DISCORD_USER_ID }}> CD 部署執行完畢！"
-          title: "🚀 ClassCord Backend CD 部署狀態"
+          content: "<@${{ secrets.DISCORD_USER_ID }}> 雙機 CD 自動化部署執行完畢！"
+          title: "🚀 ClassCord 微服務 雙機 CD 部署狀態"
           description: |
-            **Commit 訊息**: ${{ github.event.head_commit.message }}
             **版本 Tag**: `${{ github.ref_name }}`
             **觸發者**: `${{ github.actor }}`
+            **Droplet #1 (Main Stack)**: 已發布 Gateway & Main Service
+            **Droplet #2 (AI Stack)**: 已發布 AI Service
           nofail: true

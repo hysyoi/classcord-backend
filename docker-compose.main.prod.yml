@@ -1,0 +1,190 @@
+services:
+  # 0. Nacos 服務發現與配置中心 (Spring Cloud 微服務註冊中心)
+  nacos:
+    image: nacos/nacos-server:v2.3.2-slim
+    container_name: classcord_nacos_prod
+    restart: always
+    environment:
+      MODE: standalone
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    volumes:
+      - nacosdata_prod:/home/nacos/data
+      - nacoslogs_prod:/home/nacos/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8848/nacos/v1/ns/operator/switches || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 1. PostgreSQL 資料庫服務 (啟用 pgvector 支援)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: classcord_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: classcord
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+      - ./scripts/init-db.prod.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d classcord"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 2. Redis 緩存服務
+  redis:
+    image: redis:7.2-alpine
+    container_name: classcord_redis_prod
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 6. Sentinel 控制台 (Port 8858)
+  sentinel-dashboard:
+    image: bladex/sentinel-dashboard:1.8.6
+    container_name: classcord_sentinel_prod
+    restart: always
+    ports:
+      - "8858:8858"
+
+  # 7. Seata 分散式事務協調器 (Apache Seata Server)
+  seata-server:
+    image: apache/seata-server:2.0.0
+    container_name: classcord_seata_prod
+    restart: always
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+
+  # 3. RabbitMQ 訊息佇列服務
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: classcord_rabbitmq_prod
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmqdata_prod:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 4. Spring Cloud API Gateway (Droplet #1 網關進入點)
+  gateway:
+    image: ghcr.io/hysyoi/classcord-gateway:${IMAGE_TAG:-latest}
+    container_name: classcord_gateway_prod
+    restart: always
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      nacos:
+        condition: service_healthy
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
+      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
+      - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
+      - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+
+  # 5. ClassCord 主業務服務 (Main Service)
+  main-service:
+    image: ghcr.io/hysyoi/classcord-main-service:${IMAGE_TAG:-latest}
+    container_name: classcord_main_service_prod
+    restart: always
+    ports:
+      - "8081:8081"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
+      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
+      - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
+      - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/classcord?reWriteBatchedInserts=true
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_PUBLIC_URL=${S3_PUBLIC_URL}
+      - TURNSTILE_ENABLED=${TURNSTILE_ENABLED:-false}
+      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - SPRING_MAIL_PASSWORD=${SPRING_MAIL_PASSWORD}
+      - APP_BACKEND_URL=${APP_BACKEND_URL}
+      - APP_FRONTEND_URL=${APP_FRONTEND_URL}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - MAIL_FROM_EMAIL=${MAIL_FROM_EMAIL}
+
+  # 6. Prometheus 監控資料收集器
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: classcord_prometheus_prod
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheusdata_prod:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  # 7. Grafana 視覺化數據儀表板
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: classcord_grafana_prod
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafanadata_prod:/var/lib/grafana
+
+volumes:
+  nacosdata_prod:
+  nacoslogs_prod:
+  pgdata_prod:
+  redisdata_prod:
+  rabbitmqdata_prod:
+  prometheusdata_prod:
+  grafanadata_prod:

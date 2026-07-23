@@ -1,0 +1,35 @@
+# ========================================================
+# Classcord Gateway 微服務網關生產環境專屬配置 (Profile: prod)
+# ========================================================
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s # 優雅停機的最長等待寬限時間 (30秒)
+
+server:
+  shutdown: graceful # 開啟優雅停機 (Graceful Shutdown)，等待 HTTP / Netty 請求處理完畢
+
+logging:
+  level:
+    root: WARN # 根日誌等級設定為 WARN，防止高流量網關日誌過多
+    com.hys.classcord: INFO # 網關驗證與路由日誌保持 INFO
+
+springdoc:
+  api-docs:
+    enabled: false # 正式環境關閉 Open API / Swagger 接口文件外露
+  swagger-ui:
+    enabled: false # 關閉 Swagger UI 頁面
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus # 僅公開健康檢查與 Prometheus 監控端點
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true # 開啟 Docker / K8s 容器探針支援
+  metrics:
+    tags:
+      application: classcord-gateway

@@ -1,4 +1,23 @@
 services:
+  # 0. Nacos 服務發現與配置中心 (Spring Cloud 微服務註冊中心)
+  nacos:
+    image: nacos/nacos-server:v2.3.2-slim
+    container_name: classcord_nacos
+    restart: always
+    environment:
+      MODE: standalone
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    volumes:
+      - nacosdata:/home/nacos/data
+      - nacoslogs:/home/nacos/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8848/nacos/v1/ns/operator/switches || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # 1. PostgreSQL 資料庫服務
   postgres:
     image: pgvector/pgvector:pg16
@@ -12,7 +31,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./src/test/resources/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     # 整合健康檢查：使用用戶變數與資料庫名稱
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d classcord"]
@@ -88,7 +107,51 @@ services:
       timeout: 5s
       retries: 5
 
+  # 6. Sentinel 流量防禦與熔斷降級控制台 (Spring Cloud Sentinel Dashboard)
+  sentinel-dashboard:
+    image: bladex/sentinel-dashboard:1.8.6
+    container_name: classcord_sentinel
+    restart: always
+    ports:
+      - "8858:8858"
+
+  # 7. Seata 分散式事務協調器 (Apache Seata Server)
+  seata-server:
+    image: apache/seata-server:2.0.0
+    container_name: classcord_seata
+    restart: always
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+
+  # 7. Prometheus 數據採集與時序資料庫 (Port 9090)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: classcord_prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 8. Grafana 視覺化監控儀表板 (Port 3000)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: classcord_grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   redisdata:
   rabbitmqdata:
+  nacosdata:
+  nacoslogs:

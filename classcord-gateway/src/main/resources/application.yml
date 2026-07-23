@@ -1,0 +1,117 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: classcord-gateway
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        file-extension: yaml
+      sentinel:
+        transport:
+          dashboard: ${SENTINEL_DASHBOARD_ADDR:localhost:8858}
+          port: 8719
+        datasource:
+          gw-flow:
+            nacos:
+              server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+              namespace: ${NACOS_NAMESPACE:public}
+              data-id: classcord-gateway-sentinel-rules
+              group-id: DEFAULT_GROUP
+              rule-type: gw-flow
+
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+      # 全域 CORS 跨域配置 (允許前端 3000 / 5173 存取網關)
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+              - PATCH
+            allowedHeaders: "*"
+            allowCredentials: true
+
+      routes:
+        # -1. 登入註冊認證 API 路由 (Main Service - 獨立 Sentinel 限流保護)
+        - id: auth-route
+          uri: lb://classcord-main-service
+          order: -1
+          predicates:
+            - Path=/v1/auth/**
+
+        # 0. WebSocket 雙向通信路由 (Main Service)
+        - id: main-service-ws
+          uri: lb://classcord-main-service
+          order: 0
+          predicates:
+            - Path=/ws/**, /ws
+
+        # 1. AI 微服務 API 路由 (涵蓋 AI 助教 enable-ai、chat-sessions、ai-limit-status)
+        - id: ai-service-route
+          uri: lb://classcord-ai-service
+          order: 1
+          predicates:
+            - Path=/v1/materials/*/enable-ai, /v1/materials/chat-sessions/**, /v1/materials/ai-limit-status, /api/v1/ai/**
+
+        # 2. 主業務服務 API 路由
+        - id: main-service-route
+          uri: lb://classcord-main-service
+          order: 2
+          predicates:
+            - Path=/v1/**
+
+        # 3. Swagger API Docs 網關聚合路由 (Main Service)
+        - id: main-service-swagger
+          uri: lb://classcord-main-service
+          order: -1
+          predicates:
+            - Path=/v3/api-docs/main-service
+          filters:
+            - RewritePath=/v3/api-docs/main-service, /v3/api-docs
+
+        # 4. Swagger API Docs 網關聚合路由 (AI Service)
+        - id: ai-service-swagger
+          uri: lb://classcord-ai-service
+          order: -1
+          predicates:
+            - Path=/v3/api-docs/ai-service
+          filters:
+            - RewritePath=/v3/api-docs/ai-service, /v3/api-docs
+
+# Swagger UI 網關全域聚合配置
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: 1. 主業務服務 (Main Service)
+        url: /v3/api-docs/main-service
+      - name: 2. AI 微服務 (AI Service)
+        url: /v3/api-docs/ai-service
+
+app:
+  jwt:
+    secret-key: ${JWT_SECRET_KEY}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}

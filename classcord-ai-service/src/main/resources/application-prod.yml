@@ -1,0 +1,42 @@
+# ========================================================
+# Classcord AI Service 生產環境專屬配置 (Profile: prod)
+# ========================================================
+
+spring:
+  jpa:
+    show-sql: false # 正式環境關閉 SQL 語法列印，提升向量資料庫查詢效能
+    hibernate:
+      ddl-auto: validate # 正式環境僅校驗 Schema 結構，禁止自動變更資料庫
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s # 優雅停機的最長等待寬限時間 (30秒)
+
+server:
+  shutdown: graceful # 開啟優雅停機 (Graceful Shutdown)，讓長文本 AI 處理順利完成
+
+logging:
+  level:
+    root: WARN # 根日誌等級設定為 WARN，防止大量 Log 擠爆伺服器硬碟
+    com.hys.classcord: INFO # AI 模組核心業務日誌保持 INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+
+springdoc:
+  api-docs:
+    enabled: false # 正式環境關閉 Open API / Swagger 接口文件外露
+  swagger-ui:
+    enabled: false # 關閉 Swagger UI 頁面
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus # 僅公開健康檢查與 Prometheus 監控端點
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true # 開啟 Docker / K8s 容器探針支援
+  metrics:
+    tags:
+      application: classcord-ai-service

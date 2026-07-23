@@ -1,0 +1,89 @@
+spring:
+  cloud:
+    nacos:
+      config:
+        enabled: false
+        import-check:
+          enabled: false
+      discovery:
+        enabled: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/classcord}
+    driver-class-name: org.postgresql.Driver
+    username: admin
+    password: password
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+  # 2. Redis 連線資訊
+  data:
+    redis:
+      host: localhost
+      port: 6380
+
+  # 3. Mail 連線資訊
+  mail:
+    host: localhost
+    port: 1025
+    username: ""
+    password: ""
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /test
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3         # 最多重試 3 次
+          initial-interval: 10ms
+          multiplier: 1.0
+
+  # 4. 測試專用的 OAuth Mock 設定
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: mock-google-client-id
+            client-secret: mock-google-client-secret
+          github:
+            client-id: mock-github-client-id
+            client-secret: mock-github-client-secret
+          discord:
+            client-id: mock-discord-client-id
+            client-secret: mock-discord-client-secret
+
+  # 5. 測試專用的 Spring AI Mock 設定，避開 API Key 未填錯誤
+  ai:
+    openai:
+      api-key: mock-openai-key-for-testing
+
+# 測試專用的密鑰與 URL 設定
+app:
+  jwt:
+    secret-key: mock_secret_key_which_must_be_at_least_32_bytes_long_for_hs256_algorithm
+    expiration-ms: 3600000 # 1小時
+  urls:
+    backend: http://localhost:8080
+    frontend: http://localhost:3000
+  mail:
+    from-email: noreply@email.com
+  storage:
+    endpoint: https://mock-s3-endpoint.com
+    access-key: mock-access-key
+    secret-key: mock-secret-key
+    bucket-name: mock-bucket
+    public-url: https://mock-public-url.com
+    system-quota: 9126805504   # 8.5 GB
+    server-quota: 524288000    # 500 MB
+  cors:
+    allowed-origins: "http://localhost:3000"

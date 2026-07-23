@@ -80,7 +80,7 @@ jobs:
       # 步驟 6：Commit & Push Version Bump
       - name: Commit & Push Version Bump
         run: |
-          git add pom.xml
+          git add pom.xml **/pom.xml
           git commit -m "chore(release): bump version to v${{ env.NEW_VERSION }}"
           git push origin main
 
