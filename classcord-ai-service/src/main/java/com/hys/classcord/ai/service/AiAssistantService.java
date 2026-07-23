@@ -44,6 +44,8 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -76,16 +78,33 @@ public class AiAssistantService {
         // 1. 透過 OpenFeign 遠程呼叫 main-service 進行悲觀鎖驗證與狀態更新
         materialClient.markAsProcessing(materialId);
 
-        // 2. 發送 MQ 消息至 RabbitMQ 進行背景 RAG 向量化
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.AI_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
-                materialId.toString());
-        log.info("已成功標記處理中並推送 RAG 處理消息至 RabbitMQ: materialId={}", materialId);
+        // todo 扣除ai點數
+
+        // 2. 發送 MQ 消息至 RabbitMQ (使用 TransactionSynchronization 在事務 Commit 後才推播)
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            rabbitTemplate.convertAndSend(
+                                    RabbitMQConfig.AI_EXCHANGE,
+                                    RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
+                                    materialId.toString());
+                            log.info(
+                                    "【事務】已成功標記處理中並推送 RAG 處理消息至 RabbitMQ: materialId={}",
+                                    materialId);
+                        }
+                    });
+        } else {
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.AI_EXCHANGE,
+                    RabbitMQConfig.ROUTING_KEY_RAG_PROCESS,
+                    materialId.toString());
+            log.info("【無事務】已成功標記處理中並推送 RAG 處理消息至 RabbitMQ: materialId={}", materialId);
+        }
     }
 
-    /** 1. 創建新的對話會話 */
-    @Transactional
+    /** 1. 創建新的對話會話 (無 @Transactional 避免 Feign RPC 佔用 DB 連線) */
     public AiSession createSession(UUID userId, UUID materialId) {
         InternalMaterialDto material = materialClient.getMaterial(materialId);
 
