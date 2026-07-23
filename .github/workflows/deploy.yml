@@ -75,6 +75,9 @@ jobs:
   deploy-to-droplet1:
     needs: build-and-push-images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -98,12 +101,11 @@ jobs:
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             cd /opt/classcord-main
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export IMAGE_TAG=${{ github.ref_name }}
             docker compose -f docker-compose.main.prod.yml pull
             docker compose -f docker-compose.main.prod.yml up -d
             docker image prune -f
-            docker logout ghcr.io
 
   # ==========================================================
   # 任務 3：部署 Droplet #2 (AI 獨立運算機)
@@ -111,6 +113,9 @@ jobs:
   deploy-to-droplet2:
     needs: build-and-push-images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
@@ -134,13 +139,12 @@ jobs:
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             cd /opt/classcord-ai
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export IMAGE_TAG=${{ github.ref_name }}
             export DROPLET1_PRIVATE_IP=${{ secrets.DROPLET1_PRIVATE_IP }}
             docker compose -f docker-compose.ai.prod.yml pull
             docker compose -f docker-compose.ai.prod.yml up -d
             docker image prune -f
-            docker logout ghcr.io
 
   # ==========================================================
   # 任務 4：雙機部署狀態 Discord 通知
