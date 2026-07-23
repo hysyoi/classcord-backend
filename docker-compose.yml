@@ -32,7 +32,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-    # 整合健康檢查：使用用戶變數與資料庫名稱
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d classcord"]
       interval: 2s
@@ -51,9 +50,9 @@ services:
       - "8181:80"
     depends_on:
       postgres:
-        condition: service_healthy # 讓 pgadmin 等到 postgres 真正健康後才啟動
+        condition: service_healthy
 
-  # 3. Redis 服務
+  # 3. Redis 緩存服務
   redis:
     image: redis:7.2-alpine
     container_name: classcord_redis
@@ -62,7 +61,6 @@ services:
       - "6379:6379"
     volumes:
       - redisdata:/data
-    # 整合 Redis 健康檢查
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 1s
@@ -124,12 +122,16 @@ services:
       - "8091:8091"
       - "7091:7091"
     environment:
+      - TZ=Asia/Taipei
       - SEATA_PORT=8091
-      - STORE_MODE=file
+      - STORE_MODE=redis
+      - SEATA_STORE_REDIS_SINGLE_HOST=redis
+      - SEATA_STORE_REDIS_SINGLE_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy
 
-
-
-  # 7. Prometheus 數據採集與時序資料庫 (Port 9090)
+  # 8. Prometheus 數據採集與時序資料庫 (Port 9090)
   prometheus:
     image: prom/prometheus:latest
     container_name: classcord_prometheus
@@ -141,7 +143,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # 8. Grafana 視覺化監控儀表板 (Port 3000)
+  # 9. Grafana 視覺化監控儀表板 (Port 3000)
   grafana:
     image: grafana/grafana:latest
     container_name: classcord_grafana
