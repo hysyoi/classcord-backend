@@ -117,7 +117,7 @@ services:
 
   # 7. Seata 分散式事務協調器 (Apache Seata Server)
   seata-server:
-    image: apache/seata-server:2.0.0
+    image: seataio/seata-server:2.0.0
     container_name: classcord_seata
     restart: always
     ports:
