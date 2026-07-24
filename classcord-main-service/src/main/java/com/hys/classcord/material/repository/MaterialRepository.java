@@ -1,13 +1,11 @@
 package com.hys.classcord.material.repository;
 
 import com.hys.classcord.material.entity.Material;
-import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -24,8 +22,9 @@ public interface MaterialRepository extends JpaRepository<Material, UUID> {
     @Query("SELECT m.message.channel.server.id FROM Material m WHERE m.id = :id")
     UUID findServerIdById(@Param("id") UUID id);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT m FROM Material m WHERE m.id = :id")
+    // 使用原生 SQL 明確指定 FOR UPDATE，避免 Hibernate 6.x 自動生成 FOR NO KEY UPDATE
+    // 導致 Seata 內建的 Druid 1.2.7 SQL Parser 無法解析
+    @Query(value = "SELECT * FROM materials WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Material> findByIdForUpdate(@Param("id") UUID id);
 
     // 一次性 JOIN FETCH 教材對應的貼文、頻道、伺服器資訊，用於在事務外讀取 Metadata
