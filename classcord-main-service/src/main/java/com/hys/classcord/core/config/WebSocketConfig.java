@@ -2,9 +2,9 @@ package com.hys.classcord.core.config;
 
 import com.hys.classcord.auth.security.JwtUtils;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -17,6 +17,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -26,19 +27,30 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Slf4j
 @Configuration
 @EnableWebSocketMessageBroker
-@RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtUtils jwtUtils;
     private final StringRedisTemplate redisTemplate;
+    private final TaskScheduler wssHeartbeatTaskScheduler;
 
     @Value("#{\"${app.cors.allowed-origins}\".split(\"\\s*,\\s*\")}")
     private List<String> allowedOrigins;
 
+    public WebSocketConfig(
+            JwtUtils jwtUtils,
+            StringRedisTemplate redisTemplate,
+            @Qualifier("wssHeartbeatTaskScheduler") TaskScheduler wssHeartbeatTaskScheduler) {
+        this.jwtUtils = jwtUtils;
+        this.redisTemplate = redisTemplate;
+        this.wssHeartbeatTaskScheduler = wssHeartbeatTaskScheduler;
+    }
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // 訂閱廣播目的地的前綴
-        config.enableSimpleBroker("/topic", "/queue");
+        // 訂閱廣播目的地的前綴並啟動每 10 秒 STOMP 心跳包回應 (使用注入的虛擬執行緒排程器)
+        config.enableSimpleBroker("/topic", "/queue")
+                .setTaskScheduler(wssHeartbeatTaskScheduler)
+                .setHeartbeatValue(new long[] {10000, 10000});
         // 前端發送訊息的目的地前綴
         config.setApplicationDestinationPrefixes("/app");
         // 用於使用者個別訂閱的對象路徑前綴

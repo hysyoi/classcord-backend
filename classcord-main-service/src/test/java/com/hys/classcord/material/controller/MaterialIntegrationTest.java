@@ -26,10 +26,8 @@ import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
 import java.net.URI;
 import java.util.UUID;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -164,9 +162,6 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
         doReturn(DeleteObjectResponse.builder().build())
                 .when(s3Client)
                 .deleteObject(any(DeleteObjectRequest.class));
-        doReturn(DeleteObjectResponse.builder().build())
-                .when(s3Client)
-                .deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any());
 
         // 6. Mock S3Client.headObject，模擬 B2 回報的真實檔案大小（與 postRequest 的 fileSize 一致）
         //    這讓 MaterialService 中的 HeadObject 二階段驗證能正常通過
@@ -296,8 +291,7 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
         assertFalse(materialRepository.existsById(materialId));
 
         // 驗證 B: S3 刪除方法有被調用 (非同步等待 RabbitMQ Consumer 執行)
-        verify(s3Client, timeout(3000).atLeastOnce())
-                .deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any());
+        verify(s3Client, timeout(3000).atLeastOnce()).deleteObject(any(DeleteObjectRequest.class));
 
         // 驗證 C: 透過 Native SQL 檢查軟刪除在 DB 層面確實將 messages.deleted 設為 true
         Boolean messageDeleted =
@@ -336,7 +330,7 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
         // 1. 模擬 S3 物理刪除時發生嚴重故障拋出例外
         doThrow(new RuntimeException("模擬 B2 雲端機房大當機！"))
                 .when(s3Client)
-                .deleteObject(ArgumentMatchers.<Consumer<DeleteObjectRequest.Builder>>any());
+                .deleteObject(any(DeleteObjectRequest.class));
 
         // 2. 發送刪除任務給 RabbitMQ
         String failedFileKey = "materials/test-server/failed-file.pdf";

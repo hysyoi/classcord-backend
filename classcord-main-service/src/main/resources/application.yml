@@ -31,7 +31,7 @@ spring:
     locations: classpath:db/migration
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/classcord?reWriteBatchedInserts=true}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms}
     driver-class-name: org.postgresql.Driver
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
