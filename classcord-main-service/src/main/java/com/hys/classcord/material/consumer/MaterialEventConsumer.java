@@ -44,9 +44,7 @@ public class MaterialEventConsumer {
     public void handleMaterialDelete(MaterialDeleteEvent event) {
         log.info("[MQ Consumer] 收到檔案刪除任務: {}", event.fileKey());
         try {
-            s3Client.deleteObject(
-                    builder ->
-                            builder.bucket(storageProperties.getBucketName()).key(event.fileKey()));
+            storageService.deleteObject(event.fileKey());
             log.info("[MQ Consumer] B2 檔案物理刪除成功: {}", event.fileKey());
         } catch (Exception e) {
             log.error("[MQ Consumer] B2 檔案刪除失敗: {}", event.fileKey(), e);
