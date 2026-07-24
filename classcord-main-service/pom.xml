@@ -206,10 +206,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <mainClass>com.hys.classcord.ClasscordMainApplication</mainClass>
-                    <classifier>exec</classifier>
-                </configuration>
             </plugin>
         </plugins>
     </build>
