@@ -9,7 +9,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       # 透過 Droplet #1 的私有內網 IP 連線至 Nacos, Postgres, Redis, RabbitMQ
-      - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom
+      - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
       - NACOS_SERVER_ADDR=${DROPLET1_PRIVATE_IP}:8848
       - NACOS_NAMESPACE=prod
       - SENTINEL_DASHBOARD_ADDR=${DROPLET1_PRIVATE_IP}:8858
