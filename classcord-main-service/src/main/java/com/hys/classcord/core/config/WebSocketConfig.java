@@ -2,9 +2,9 @@ package com.hys.classcord.core.config;
 
 import com.hys.classcord.auth.security.JwtUtils;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -27,7 +27,6 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Slf4j
 @Configuration
 @EnableWebSocketMessageBroker
-@RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtUtils jwtUtils;
@@ -36,6 +35,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Value("#{\"${app.cors.allowed-origins}\".split(\"\\s*,\\s*\")}")
     private List<String> allowedOrigins;
+
+    public WebSocketConfig(
+            JwtUtils jwtUtils,
+            StringRedisTemplate redisTemplate,
+            @Qualifier("wssHeartbeatTaskScheduler") TaskScheduler wssHeartbeatTaskScheduler) {
+        this.jwtUtils = jwtUtils;
+        this.redisTemplate = redisTemplate;
+        this.wssHeartbeatTaskScheduler = wssHeartbeatTaskScheduler;
+    }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
