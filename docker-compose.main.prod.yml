@@ -116,6 +116,7 @@ services:
       - SPRING_PROFILES_ACTIVE=prod
       - JAVA_OPTS=-Xms128m -Xmx256m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
       - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
+      - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET1_PRIVATE_IP}
       - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
       - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
       - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
@@ -142,6 +143,7 @@ services:
       - SPRING_PROFILES_ACTIVE=prod
       - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
       - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
+      - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET1_PRIVATE_IP}
       - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
       - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
       - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
