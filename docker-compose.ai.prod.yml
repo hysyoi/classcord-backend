@@ -17,7 +17,7 @@ services:
       - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-${DROPLET1_PRIVATE_IP}:8091}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://${DROPLET1_PRIVATE_IP}:5432/classcord?reWriteBatchedInserts=true
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://${DROPLET1_PRIVATE_IP}:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms
       - SPRING_DATA_REDIS_HOST=${DROPLET1_PRIVATE_IP}
       - SPRING_RABBITMQ_HOST=${DROPLET1_PRIVATE_IP}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}

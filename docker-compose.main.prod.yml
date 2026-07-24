@@ -149,7 +149,7 @@ services:
       - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/classcord?reWriteBatchedInserts=true
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
