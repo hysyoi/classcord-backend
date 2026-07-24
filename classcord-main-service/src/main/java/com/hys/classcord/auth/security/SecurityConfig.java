@@ -88,7 +88,8 @@ public class SecurityConfig {
                                 auth.requestMatchers(
                                                 "/swagger-ui/**",
                                                 "/v3/api-docs/**",
-                                                "/api/internal/**")
+                                                "/api/internal/**",
+                                                "/actuator/**")
                                         .permitAll()
                                         .requestMatchers("/v1/auth/**")
                                         .permitAll()
