@@ -104,7 +104,7 @@ jobs:
             echo "${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export IMAGE_TAG=${{ github.ref_name }}
             docker compose -f docker-compose.main.prod.yml pull
-            docker compose -f docker-compose.main.prod.yml up -d
+            docker compose -f docker-compose.main.prod.yml up -d --force-recreate gateway main-service
             docker image prune -f
 
   # ==========================================================
@@ -143,7 +143,7 @@ jobs:
             export IMAGE_TAG=${{ github.ref_name }}
             export DROPLET1_PRIVATE_IP=${{ secrets.DROPLET1_PRIVATE_IP }}
             docker compose -f docker-compose.ai.prod.yml pull
-            docker compose -f docker-compose.ai.prod.yml up -d
+            docker compose -f docker-compose.ai.prod.yml up -d --force-recreate ai-service
             docker image prune -f
 
   # ==========================================================

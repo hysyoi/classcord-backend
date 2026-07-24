@@ -1,20 +1,17 @@
 package com.hys.classcord.server.repository;
 
 import com.hys.classcord.server.entity.Server;
-import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ServerRepository extends JpaRepository<Server, UUID> {
-    // 在查詢伺服器時，立刻對該行數據加上排他鎖（Pessimistic Write Lock）
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT s FROM Server s WHERE s.id = :id")
+    // 使用原生 SQL 明確指定 FOR UPDATE，避免 Hibernate 6.x 生成 Seata 無法解析的 FOR NO KEY UPDATE
+    @Query(value = "SELECT * FROM servers WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Server> findByIdForUpdate(@Param("id") UUID id);
 
     long countByOwnerId(UUID ownerId);
