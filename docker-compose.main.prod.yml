@@ -113,6 +113,7 @@ services:
         condition: service_healthy
     environment:
       - SPRING_PROFILES_ACTIVE=prod
+      - JAVA_OPTS=-Xms128m -Xmx256m -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom
       - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
       - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
       - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
@@ -138,6 +139,7 @@ services:
         condition: service_healthy
     environment:
       - SPRING_PROFILES_ACTIVE=prod
+      - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom
       - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
       - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
       - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
