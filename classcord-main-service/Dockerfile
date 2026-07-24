@@ -32,7 +32,7 @@ COPY --from=build --chown=appuser:appgroup /app/classcord-main-service/target/*.
 
 EXPOSE 8081
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=5 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8081/actuator/health || exit 1
 
 USER appuser
