@@ -6,14 +6,15 @@ scrape_configs:
   - job_name: 'classcord-gateway'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['gateway:8080']
 
   - job_name: 'classcord-main-service'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8081']
+      - targets: ['main-service:8081']
 
+  # AI Service 在 Droplet #2，需透過 VPC 私有 IP 連線
   - job_name: 'classcord-ai-service'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8082']
+      - targets: ['10.104.0.2:8082']

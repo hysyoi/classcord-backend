@@ -39,7 +39,7 @@ build/
 .env
 .env-prod/
 *.env
-*.html
+/tools/*.html
 
 ### Deployment & Configs ###
 nginx/

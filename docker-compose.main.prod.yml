@@ -201,6 +201,16 @@ services:
     volumes:
       - grafanadata_prod:/var/lib/grafana
 
+  # 10. Dozzle 即時容器日誌檢視工具
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: classcord_dozzle_prod
+    restart: always
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
 volumes:
   nacosdata_prod:
   nacoslogs_prod:

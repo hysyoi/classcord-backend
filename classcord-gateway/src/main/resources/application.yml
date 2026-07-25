@@ -50,6 +50,7 @@ spring:
               - PATCH
             allowedHeaders: "*"
             allowCredentials: true
+            maxAge: 3600  # 瀏覽器快取 Preflight 結果 1 小時，避免每次 API 呼叫都多一次 OPTIONS 來回
 
       routes:
         # -1. 登入註冊認證 API 路由 (Main Service - 獨立 Sentinel 限流保護)
