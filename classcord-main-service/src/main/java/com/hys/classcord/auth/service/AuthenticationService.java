@@ -108,7 +108,7 @@ public class AuthenticationService {
                     "感謝您註冊 Classcord 雲端課堂平台！為了確保您的帳戶安全，請點擊下方按鈕以啟用帳戶：",
                     "啟用我的帳號",
                     activateLink,
-                    "⏰ 本開通連結於 24 小時內有效，逾期需重新註冊。");
+                    "本開通連結於 24 小時內有效，逾期需重新註冊。");
 
         } catch (Exception e) {
             log.error("發送註冊驗證信件失敗，Email: {}", normalizedEmail, e);
@@ -215,7 +215,7 @@ public class AuthenticationService {
                         "我們收到了您重設 Classcord 帳戶密碼的請求。請點擊下方按鈕以重新設定您的密碼：",
                         "重設我的密碼",
                         resetLink,
-                        "⚠️ 本重設連結安全時效為 15 分鐘。若您並未發起此請求，請忽略本信件。");
+                        "本重設連結安全時效為 15 分鐘。若您並未發起此請求，請忽略本信件。");
             } else {
                 log.info("忘記密碼請求：信箱未註冊，靜默忽略: {}", normalizedEmail);
             }
