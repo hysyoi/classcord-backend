@@ -79,7 +79,9 @@ public class ServerController {
     public ResponseEntity<List<ServerMemberResponse>> getServerMembers(
             @AuthenticationPrincipal UUID userId, @PathVariable UUID serverId) {
         List<ServerMember> members = serverService.getServerMembers(userId, serverId);
-        Set<String> onlineUserIds = presenceService.getOnlineUserIds();
+        List<String> memberUserIds =
+                members.stream().map(m -> m.getUser().getId().toString()).toList();
+        Set<String> onlineUserIds = presenceService.filterOnlineUserIds(memberUserIds);
         List<ServerMemberResponse> responses =
                 members.stream()
                         .map(

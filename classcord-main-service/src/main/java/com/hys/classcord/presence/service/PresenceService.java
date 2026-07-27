@@ -4,6 +4,7 @@ import com.hys.classcord.presence.dto.PresenceEvent;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +16,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -132,10 +134,23 @@ public class PresenceService {
         if (users.isEmpty()) {
             return;
         }
-        for (SimpUser user : users) {
-            redisTemplate.expire(CONN_COUNT_KEY_PREFIX + user.getName(), TTL);
-        }
-        redisTemplate.expire(ONLINE_SET_KEY, TTL);
+        // 用 pipeline 把所有人的 EXPIRE 指令一次送出，避免連線人數一多，
+        // 逐一呼叫造成大量的 Redis 網路來回（RTT）
+        redisTemplate.executePipelined(
+                (RedisCallback<Object>)
+                        connection -> {
+                            for (SimpUser user : users) {
+                                connection
+                                        .keyCommands()
+                                        .expire(
+                                                toBytes(CONN_COUNT_KEY_PREFIX + user.getName()),
+                                                TTL.getSeconds());
+                            }
+                            connection
+                                    .keyCommands()
+                                    .expire(toBytes(ONLINE_SET_KEY), TTL.getSeconds());
+                            return null;
+                        });
     }
 
     public boolean isOnline(UUID userId) {
@@ -143,10 +158,36 @@ public class PresenceService {
                 redisTemplate.opsForSet().isMember(ONLINE_SET_KEY, userId.toString()));
     }
 
-    /** 取得目前所有在線使用者的 ID（字串形式），供批次查詢成員列表時使用，避免逐一查詢 Redis */
-    public Set<String> getOnlineUserIds() {
-        Set<String> members = redisTemplate.opsForSet().members(ONLINE_SET_KEY);
-        return members != null ? members : Set.of();
+    /**
+     * 批次查詢指定的一批使用者是否在線，用 pipeline 一次送出多個 SISMEMBER， 只查詢呼叫端關心的那幾個人，而不是把全站在線名單整個拉回來 (原本的
+     * getOnlineUserIds() 用 SMEMBERS 撈整個 Set，在線人數一多會既慢又佔記憶體)。
+     */
+    public Set<String> filterOnlineUserIds(Collection<String> userIds) {
+        if (userIds.isEmpty()) {
+            return Set.of();
+        }
+        List<String> idList = List.copyOf(userIds);
+        List<Object> results =
+                redisTemplate.executePipelined(
+                        (RedisCallback<Object>)
+                                connection -> {
+                                    byte[] setKey = toBytes(ONLINE_SET_KEY);
+                                    for (String id : idList) {
+                                        connection.setCommands().sIsMember(setKey, toBytes(id));
+                                    }
+                                    return null;
+                                });
+        Set<String> online = new HashSet<>();
+        for (int i = 0; i < idList.size(); i++) {
+            if (Boolean.TRUE.equals(results.get(i))) {
+                online.add(idList.get(i));
+            }
+        }
+        return online;
+    }
+
+    private static byte[] toBytes(String value) {
+        return value.getBytes(StandardCharsets.UTF_8);
     }
 
     /**
