@@ -2,7 +2,9 @@ package com.hys.classcord.presence.service;
 
 import com.hys.classcord.presence.dto.PresenceEvent;
 import com.hys.classcord.server.repository.ServerMemberRepository;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -10,7 +12,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.user.SimpUser;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
@@ -43,28 +49,54 @@ public class PresenceService {
     private final SimpUserRegistry simpUserRegistry;
     private final ServerMemberRepository serverMemberRepository;
 
+    // 把「計數 + 條件式寫入在線名單」包成 Lua script 原子執行，避免兩個 Redis 指令中間被其他連線/斷線事件插隊，
+    private final RedisScript<Long> presenceConnectScript;
+    private final RedisScript<Long> presenceDisconnectScript;
+
     /**
      * 服務啟動時清空所有殘留的在線狀態。 因為目前是單一 instance 部署，服務重啟就代表所有舊的 WebSocket 連線必定都已經斷開， 藉此清除因行程被強制關閉（kill /
      * crash）而沒有正常觸發斷線事件、殘留在 Redis 裡的幽靈在線紀錄。 若之後擴展為多 instance 部署，這裡就不能再無條件清空，需要改用其他方式（例如 TTL）。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void clearStaleStateOnStartup() {
-        Set<String> connKeys = redisTemplate.keys(CONN_COUNT_KEY_PREFIX + "*");
-        if (connKeys != null && !connKeys.isEmpty()) {
+        Set<String> connKeys = scanKeys(CONN_COUNT_KEY_PREFIX + "*");
+        if (!connKeys.isEmpty()) {
             redisTemplate.delete(connKeys);
         }
         redisTemplate.delete(ONLINE_SET_KEY);
         log.info("已清空殘留的在線狀態資料（服務重啟）");
     }
 
+    /**
+     * 用 SCAN 取代 KEYS 尋找殘留的 key。這顆 Redis 跟其他服務共用（JWT 黑名單、向量資料庫等）， KEYS 指令會依整個 keyspace
+     * 大小阻塞單一執行緒，SCAN 則是分批、非阻塞地游標掃描。
+     */
+    private Set<String> scanKeys(String pattern) {
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(200).build();
+        Set<String> result =
+                redisTemplate.execute(
+                        (RedisConnection connection) -> {
+                            Set<String> keys = new HashSet<>();
+                            try (Cursor<byte[]> cursor = connection.scan(options)) {
+                                while (cursor.hasNext()) {
+                                    keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                                }
+                            }
+                            return keys;
+                        });
+        return result != null ? result : Set.of();
+    }
+
     /** 使用者建立一條新的 WebSocket 連線，連線數由 0 變 1 時才視為剛上線並廣播 */
     public void handleConnect(String userId) {
         String connKey = CONN_COUNT_KEY_PREFIX + userId;
-        Long count = redisTemplate.opsForValue().increment(connKey);
-        redisTemplate.expire(connKey, TTL);
+        Long count =
+                redisTemplate.execute(
+                        presenceConnectScript,
+                        List.of(connKey, ONLINE_SET_KEY),
+                        String.valueOf(TTL.getSeconds()),
+                        userId);
         if (count != null && count == 1) {
-            redisTemplate.opsForSet().add(ONLINE_SET_KEY, userId);
-            redisTemplate.expire(ONLINE_SET_KEY, TTL);
             broadcast(userId, true);
             log.info("使用者上線: {}", userId);
         }
@@ -73,14 +105,15 @@ public class PresenceService {
     /** 使用者的其中一條 WebSocket 連線斷開，連線數歸零時才視為真正離線並廣播 */
     public void handleDisconnect(String userId) {
         String connKey = CONN_COUNT_KEY_PREFIX + userId;
-        Long count = redisTemplate.opsForValue().decrement(connKey);
+        Long count =
+                redisTemplate.execute(
+                        presenceDisconnectScript,
+                        List.of(connKey, ONLINE_SET_KEY),
+                        String.valueOf(TTL.getSeconds()),
+                        userId);
         if (count == null || count <= 0) {
-            redisTemplate.delete(connKey);
-            redisTemplate.opsForSet().remove(ONLINE_SET_KEY, userId);
             broadcast(userId, false);
             log.info("使用者離線: {}", userId);
-        } else {
-            redisTemplate.expire(connKey, TTL);
         }
     }
 

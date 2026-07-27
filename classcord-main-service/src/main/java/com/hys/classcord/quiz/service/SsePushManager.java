@@ -28,9 +28,9 @@ public class SsePushManager {
         // 設定超時時間為 5 分鐘 (300,000ms)，保障 Gemini 平行出題時間充足
         SseEmitter emitter = new SseEmitter(300_000L);
 
-        emitter.onCompletion(() -> cleanup(jobId));
-        emitter.onTimeout(() -> cleanup(jobId));
-        emitter.onError((ex) -> cleanup(jobId));
+        emitter.onCompletion(() -> cleanup(jobId, emitter));
+        emitter.onTimeout(() -> cleanup(jobId, emitter));
+        emitter.onError((ex) -> cleanup(jobId, emitter));
 
         boolean alreadyFinished =
                 currentStatus != null
@@ -48,7 +48,12 @@ public class SsePushManager {
             return emitter;
         }
 
-        emitters.put(jobId, emitter);
+        // 若同一個 jobId 已有舊連線（例如前端重新整理、開了多個分頁），先讓舊連線正常結束，
+        // 避免它被直接覆蓋、佔用連線資源直到 5 分鐘 timeout 才釋放
+        SseEmitter previous = emitters.put(jobId, emitter);
+        if (previous != null) {
+            previous.complete();
+        }
 
         try {
             emitter.send(
@@ -73,17 +78,19 @@ public class SsePushManager {
                 if (statusResponse.status() == JobStatus.COMPLETED
                         || statusResponse.status() == JobStatus.FAILED) {
                     emitter.complete();
-                    cleanup(jobId);
+                    cleanup(jobId, emitter);
                 }
             } catch (IOException e) {
                 log.error("發送任務狀態更新失敗: {}", jobId, e);
-                cleanup(jobId);
+                cleanup(jobId, emitter);
             }
         }
     }
 
-    private void cleanup(UUID jobId) {
-        emitters.remove(jobId);
+    // 用「key + value」的條件式移除，確保只清掉自己對應的那個 emitter，
+    // 不會誤刪同一個 jobId 底下已經被新連線覆蓋掉的 map 項目
+    private void cleanup(UUID jobId, SseEmitter emitter) {
+        emitters.remove(jobId, emitter);
         log.debug("已清理並移除了任務的 SSE 連線: {}", jobId);
     }
 }
