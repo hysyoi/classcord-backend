@@ -31,8 +31,9 @@ import org.springframework.stereotype.Service;
  * 使用 Redis 追蹤使用者的在線狀態。 同一使用者可能同時開啟多個分頁/裝置連線，因此以連線計數器判斷「真正離線」的時機， 而非單純依靠單一 WebSocket Session
  * 的連線/斷線事件。
  *
- * <p>所有 presence 相關的 Redis key 都帶有 TTL，並由定時任務持續續期： 即使行程被強制關閉（kill / crash）沒有觸發正常的斷線事件， 殘留資料最慢也會在
- * TTL 時間內自動過期消失，不會永久卡在「在線」狀態。
+ * <p>刻意不使用一個全站共用的「在線名單」集合：如果用共用集合，只要系統中還有任何一個人在線， 定時續期就會一直幫整個集合續命，導致某個人非正常斷線（沒觸發到 disconnect 事件）時，
+ * 他的殘留紀錄會被「別人的在線狀態」一路續下去，變成永遠除不掉的幽靈在線。 改成每個使用者的在線狀態只綁定在自己專屬的 presence:conn:{userId} 這把 key
+ * 上，是否在線直接看這把 key 存不存在（EXISTS）， TTL 到期就自動、獨立地消失，不會被其他人拖累。
  *
  * <p>廣播範圍比照聊天訊息，只送到該使用者所屬的各個伺服器頻道（/topic/servers/{serverId}/presence）， 不對全站廣播。
  */
@@ -41,7 +42,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PresenceService {
 
-    private static final String ONLINE_SET_KEY = "presence:online";
     private static final String CONN_COUNT_KEY_PREFIX = "presence:conn:";
 
     // TTL 設定為定時續期週期的 3 倍，確保正常運作下不會因為排程稍微延遲就被誤判過期
@@ -54,7 +54,8 @@ public class PresenceService {
     private final ServerMemberRepository serverMemberRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
 
-    // 把「計數 + 條件式寫入在線名單」包成 Lua script 原子執行，避免兩個 Redis 指令中間被其他連線/斷線事件插隊，
+    // 把「計數 + 條件式刪除」包成 Lua script 原子執行，避免 DECR 到 0 跟刪除 key 這兩步中間，
+    // 被一個緊接著到來的新連線插隊（該連線的 INCR 會被夾在中間，若沒包成原子操作，可能被誤刪）
     private final RedisScript<Long> presenceConnectScript;
     private final RedisScript<Long> presenceDisconnectScript;
 
@@ -68,7 +69,6 @@ public class PresenceService {
         if (!connKeys.isEmpty()) {
             redisTemplate.delete(connKeys);
         }
-        redisTemplate.delete(ONLINE_SET_KEY);
         log.info("已清空殘留的在線狀態資料（服務重啟）");
     }
 
@@ -97,10 +97,7 @@ public class PresenceService {
         String connKey = CONN_COUNT_KEY_PREFIX + userId;
         Long count =
                 redisTemplate.execute(
-                        presenceConnectScript,
-                        List.of(connKey, ONLINE_SET_KEY),
-                        String.valueOf(TTL.getSeconds()),
-                        userId);
+                        presenceConnectScript, List.of(connKey), String.valueOf(TTL.getSeconds()));
         if (count != null && count == 1) {
             applicationEventPublisher.publishEvent(
                     new PresenceEvent(UUID.fromString(userId), true));
@@ -114,9 +111,8 @@ public class PresenceService {
         Long count =
                 redisTemplate.execute(
                         presenceDisconnectScript,
-                        List.of(connKey, ONLINE_SET_KEY),
-                        String.valueOf(TTL.getSeconds()),
-                        userId);
+                        List.of(connKey),
+                        String.valueOf(TTL.getSeconds()));
         if (count == null || count <= 0) {
             applicationEventPublisher.publishEvent(
                     new PresenceEvent(UUID.fromString(userId), false));
@@ -146,22 +142,16 @@ public class PresenceService {
                                                 toBytes(CONN_COUNT_KEY_PREFIX + user.getName()),
                                                 TTL.getSeconds());
                             }
-                            connection
-                                    .keyCommands()
-                                    .expire(toBytes(ONLINE_SET_KEY), TTL.getSeconds());
                             return null;
                         });
     }
 
+    /** 是否在線直接看這個使用者的連線計數器 key 存不存在，不需要另外維護一份在線名單 */
     public boolean isOnline(UUID userId) {
-        return Boolean.TRUE.equals(
-                redisTemplate.opsForSet().isMember(ONLINE_SET_KEY, userId.toString()));
+        return Boolean.TRUE.equals(redisTemplate.hasKey(CONN_COUNT_KEY_PREFIX + userId));
     }
 
-    /**
-     * 批次查詢指定的一批使用者是否在線，用 pipeline 一次送出多個 SISMEMBER， 只查詢呼叫端關心的那幾個人，而不是把全站在線名單整個拉回來 (原本的
-     * getOnlineUserIds() 用 SMEMBERS 撈整個 Set，在線人數一多會既慢又佔記憶體)。
-     */
+    /** 批次查詢指定的一批使用者是否在線，用 pipeline 一次送出多個 EXISTS， 只查詢呼叫端關心的那幾個人，而不是撈一份全站在線名單回來比對。 */
     public Set<String> filterOnlineUserIds(Collection<String> userIds) {
         if (userIds.isEmpty()) {
             return Set.of();
@@ -171,9 +161,10 @@ public class PresenceService {
                 redisTemplate.executePipelined(
                         (RedisCallback<Object>)
                                 connection -> {
-                                    byte[] setKey = toBytes(ONLINE_SET_KEY);
                                     for (String id : idList) {
-                                        connection.setCommands().sIsMember(setKey, toBytes(id));
+                                        connection
+                                                .keyCommands()
+                                                .exists(toBytes(CONN_COUNT_KEY_PREFIX + id));
                                     }
                                     return null;
                                 });
