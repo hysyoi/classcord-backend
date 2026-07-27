@@ -73,9 +73,25 @@ public class QuizService {
                             true)
                     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-    /** 註冊前端的 SSE 訂閱管道 */
+    /**
+     * 註冊前端的 SSE 訂閱管道。
+     *
+     * <p>先查一次資料庫目前的任務狀態再傳給 {@link SsePushManager}，讓重新整理頁面後用同一個 jobId
+     * 重新訂閱時，也能正確補送目前進度或已完成的最終結果，而不是讓前端乾等到 timeout。
+     */
     public SseEmitter registerSseStream(UUID jobId) {
-        return ssePushManager.register(jobId);
+        QuizJobStatusResponse currentStatus =
+                quizGenerationJobRepository
+                        .findById(jobId)
+                        .map(
+                                job ->
+                                        new QuizJobStatusResponse(
+                                                job.getId(),
+                                                job.getMaterialId(),
+                                                job.getStatus(),
+                                                job.getErrorMessage()))
+                        .orElse(null);
+        return ssePushManager.register(jobId, currentStatus);
     }
 
     /** 教師/助教：發起 AI 出題請求 (異步架構，寫入 Job 並派發 MQ 消息) */
