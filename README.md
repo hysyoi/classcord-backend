@@ -4,7 +4,7 @@ Classcord 是一款 AI 驅動的社群學習網路應用。
 
 以「伺服器 / 頻道」的架構打造 Discord 般的即時互動體驗，讓師生能自由建立班級社群、即時聊天、分享教材。每份教材都能生成專屬 AI 助教，基於教材內容建立 RAG 知識索引，即時解答學生問題；系統並自動彙整全班測驗正確率統計與學生疑問焦點報告，協助教師快速掌握班級學習狀況、精準補強教學盲點。
 
-![Classcord 封面圖](https://cdn-classcord.hys-lab.com/cover.png)
+![Classcord 封面圖](https://i.ibb.co/DDfXkrLk/cover.png)
 
 ## 技術 (Technologies)
 - `Java 21`
