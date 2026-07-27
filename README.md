@@ -1,6 +1,6 @@
 # Classcord
 
-Classcord 是一款 AI 驅動的社群學習網路應用。
+[Classcord](https://classcord.hys-lab.com) 是一款 AI 驅動的社群學習網路應用。
 
 ![Classcord 封面圖](https://i.ibb.co/DDfXkrLk/cover.png)
 
