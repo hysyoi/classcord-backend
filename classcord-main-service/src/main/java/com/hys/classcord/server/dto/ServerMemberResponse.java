@@ -13,8 +13,9 @@ public record ServerMemberResponse(
         String username,
         String avatarUrl,
         ServerRole role,
-        Instant joinedAt) {
-    public static ServerMemberResponse fromEntity(ServerMember member) {
+        Instant joinedAt,
+        boolean online) {
+    public static ServerMemberResponse fromEntity(ServerMember member, boolean online) {
         return ServerMemberResponse.builder()
                 .id(member.getId())
                 .userId(member.getUser().getId())
@@ -22,6 +23,7 @@ public record ServerMemberResponse(
                 .avatarUrl(member.getUser().getAvatarUrl())
                 .role(member.getRole())
                 .joinedAt(member.getJoinedAt())
+                .online(online)
                 .build();
     }
 }

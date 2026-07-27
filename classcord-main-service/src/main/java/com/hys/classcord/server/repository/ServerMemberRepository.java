@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -24,4 +26,8 @@ public interface ServerMemberRepository extends JpaRepository<ServerMember, UUID
     List<ServerMember> findWithServerAndOwnerByUserId(UUID userId);
 
     long countByUserId(UUID userId);
+
+    // 只取伺服器 ID，供 presence 廣播使用，避免載入整個 Server/Owner Entity
+    @Query("select sm.server.id from ServerMember sm where sm.user.id = :userId")
+    List<UUID> findServerIdsByUserId(@Param("userId") UUID userId);
 }

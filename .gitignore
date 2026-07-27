@@ -40,6 +40,10 @@ build/
 .env-prod/
 *.env
 /tools/*.html
+/tools/demo-chat-sim/node_modules/
+/tools/demo-chat-sim/config.json
+/tools
+.claude/
 
 ### Deployment & Configs ###
 nginx/

@@ -9,9 +9,11 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.data.web.config.EnableSpringDataWebSupport;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(exclude = {UserDetailsServiceAutoConfiguration.class}) // 強行關閉預設密碼建置機制
 @EnableAsync // 開啟 Spring 的非同步任務支援
+@EnableScheduling // 開啟 @Scheduled 定時任務支援（presence TTL 續期用）
 @EnableJpaAuditing // 開啟 JPA 審計功能
 @EnableDiscoveryClient
 @EnableFeignClients

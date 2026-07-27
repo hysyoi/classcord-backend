@@ -1,5 +1,6 @@
 package com.hys.classcord.server.controller;
 
+import com.hys.classcord.presence.service.PresenceService;
 import com.hys.classcord.server.dto.CreateServerRequest;
 import com.hys.classcord.server.dto.ServerMemberResponse;
 import com.hys.classcord.server.dto.ServerResponse;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 public class ServerController {
 
     private final ServerService serverService;
+    private final PresenceService presenceService;
 
     @PostMapping
     @Operation(summary = "建立伺服器", description = "建立新伺服器，並自動將建立者設為 TEACHER 角色")
@@ -39,8 +42,9 @@ public class ServerController {
     public ResponseEntity<ServerMemberResponse> joinServer(
             @AuthenticationPrincipal UUID userId, @PathVariable UUID serverId) {
         ServerMember member = serverService.joinServer(userId, serverId);
+        boolean online = presenceService.isOnline(member.getUser().getId());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ServerMemberResponse.fromEntity(member));
+                .body(ServerMemberResponse.fromEntity(member, online));
     }
 
     @PutMapping("/{serverId}")
@@ -75,8 +79,18 @@ public class ServerController {
     public ResponseEntity<List<ServerMemberResponse>> getServerMembers(
             @AuthenticationPrincipal UUID userId, @PathVariable UUID serverId) {
         List<ServerMember> members = serverService.getServerMembers(userId, serverId);
+        List<String> memberUserIds =
+                members.stream().map(m -> m.getUser().getId().toString()).toList();
+        Set<String> onlineUserIds = presenceService.filterOnlineUserIds(memberUserIds);
         List<ServerMemberResponse> responses =
-                members.stream().map(ServerMemberResponse::fromEntity).toList();
+                members.stream()
+                        .map(
+                                m ->
+                                        ServerMemberResponse.fromEntity(
+                                                m,
+                                                onlineUserIds.contains(
+                                                        m.getUser().getId().toString())))
+                        .toList();
         return ResponseEntity.ok(responses);
     }
 }
