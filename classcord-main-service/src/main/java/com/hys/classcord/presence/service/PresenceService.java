@@ -11,6 +11,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.Cursor;
@@ -20,6 +21,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.user.SimpUser;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -48,6 +50,7 @@ public class PresenceService {
     private final SimpMessagingTemplate messagingTemplate;
     private final SimpUserRegistry simpUserRegistry;
     private final ServerMemberRepository serverMemberRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // 把「計數 + 條件式寫入在線名單」包成 Lua script 原子執行，避免兩個 Redis 指令中間被其他連線/斷線事件插隊，
     private final RedisScript<Long> presenceConnectScript;
@@ -97,7 +100,8 @@ public class PresenceService {
                         String.valueOf(TTL.getSeconds()),
                         userId);
         if (count != null && count == 1) {
-            broadcast(userId, true);
+            applicationEventPublisher.publishEvent(
+                    new PresenceEvent(UUID.fromString(userId), true));
             log.info("使用者上線: {}", userId);
         }
     }
@@ -112,7 +116,8 @@ public class PresenceService {
                         String.valueOf(TTL.getSeconds()),
                         userId);
         if (count == null || count <= 0) {
-            broadcast(userId, false);
+            applicationEventPublisher.publishEvent(
+                    new PresenceEvent(UUID.fromString(userId), false));
             log.info("使用者離線: {}", userId);
         }
     }
@@ -144,11 +149,19 @@ public class PresenceService {
         return members != null ? members : Set.of();
     }
 
-    /** 只廣播給該使用者所屬的每個伺服器頻道，而非全站廣播 */
-    private void broadcast(String userId, boolean online) {
-        UUID userUuid = UUID.fromString(userId);
-        PresenceEvent event = new PresenceEvent(userUuid, online);
-        List<UUID> serverIds = serverMemberRepository.findServerIdsByUserId(userUuid);
+    /**
+     * 實際查詢資料庫並廣播的地方，故意做成非同步（@Async）的事件監聽器，而不是直接在 handleConnect/handleDisconnect 裡同步呼叫：後者是被
+     * WebSocket 連線/斷線事件同步觸發的， 若在同一條執行緒上等 DB 查詢（findServerIdsByUserId）跟多次 WebSocket 廣播做完，
+     * 遇到大量使用者同時重連（例如網路波動）時容易讓執行緒池與 DB 連線池被佔滿、拖慢整體連線處理。 改用 ApplicationEventPublisher 發佈事件，讓
+     * handleConnect/handleDisconnect 發完事件就能立刻返回。
+     *
+     * <p>注意：@Async 只有透過 Spring 的代理呼叫才會生效，同一個類別內部直接呼叫方法（this.xxx()）會繞過代理、
+     * 不會真的非同步，因此這裡刻意透過事件機制觸發，而不是讓 handleConnect 直接呼叫這個方法。
+     */
+    @Async
+    @EventListener
+    public void onPresenceChanged(PresenceEvent event) {
+        List<UUID> serverIds = serverMemberRepository.findServerIdsByUserId(event.userId());
         for (UUID serverId : serverIds) {
             messagingTemplate.convertAndSend("/topic/servers/" + serverId + "/presence", event);
         }
