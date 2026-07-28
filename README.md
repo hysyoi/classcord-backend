@@ -12,11 +12,12 @@
     <a href=""><b>Documentation</b></a>
 </p>
 
+<br /><br />
+![Classcord 封面圖](https://i.ibb.co/DDfXkrLk/cover.png)
+
 # Classcord
 
 Classcord 是一款 AI 驅動的社群學習網路應用。
-
-![Classcord 封面圖](https://i.ibb.co/DDfXkrLk/cover.png)
 
 以「伺服器 / 頻道」的架構打造 Discord 般的即時互動體驗，讓師生能自由建立班級社群、即時聊天、分享教材。
 
