@@ -24,7 +24,7 @@
 
 <br />
 
-## 技術 (Technologies)
+## 🌟 技術 (Technologies)
 - `Java 21`
 - `Spring Cloud  (Nacos, Gateway, Open Feign, Sentinel, Seata)`
 - `Spring AI`
@@ -40,7 +40,7 @@
 
 <br />
 
-## 功能 (Features)
+## 📝 功能 (Features)
 
 - 🗨️ **即時社群互動**：仿 Discord 的伺服器 / 頻道架構，支援即時訊息與線上狀態顯示
 - 📚 **教材共享**：課程教材上傳與分享
@@ -51,7 +51,7 @@
 
 <br />
 
-## 架構 (Architecture)
+## 🏛️ 架構 (Architecture)
 ```mermaid
 flowchart TB
     Client(["Web / Mobile Client"])
@@ -151,7 +151,7 @@ sequenceDiagram
 
 <br />
 
-## 過程 (The Process)
+## 📍 過程 (The Process)
 
 我察覺到將即時社群互動（如 Discord）與透過 AI 學習相結合的可能性，於是開發了這款網路應用。
 
@@ -163,7 +163,7 @@ sequenceDiagram
 
 <br />
 
-## 如何本地啟動專案 (Running the Project)
+## 🚀 如何本地啟動專案 (Running the Project)
 1. Clone 此專案
 2. 設定 `.env`
 3. `docker-compose up -d` 啟動 Postgres / Redis / RabbitMQ / Nacos / Seata 等基礎設施
@@ -172,5 +172,5 @@ sequenceDiagram
 
 <br />
 
-## 預覽 (Preview)
+## 📎 預覽 (Preview)
 [預覽影片](https://github.com/user-attachments/assets/73396abe-6b14-4c0d-80cd-74e021412652)
