@@ -1,3 +1,17 @@
+<br /><br />
+
+<p align="center">
+<a href="https://classcord.hys-lab.com">
+  <img src="https://i.ibb.co/MyBwK7Jx/logo-bg.png" alt="Classcord Logo" width="400">
+</a>
+</p>
+<p align="center"><b>AI 驅動的社群學習網路應用</b></p>
+
+<p align="center">
+    <a href="https://classcord.hys-lab.com"><b>Website</b></a> •
+    <a href=""><b>Documentation</b></a>
+</p>
+
 # Classcord
 
 Classcord 是一款 AI 驅動的社群學習網路應用。
