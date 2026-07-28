@@ -38,6 +38,8 @@
 - `Backblaze B2`
 - `Flyway`
 
+<br />
+
 ## 功能 (Features)
 
 - 🗨️ **即時社群互動**：仿 Discord 的伺服器 / 頻道架構，支援即時訊息與線上狀態顯示
@@ -46,6 +48,8 @@
 - 📊 **全班正確率統計**：AI 自動出題、批改，彙整班級錯題率與選項分佈，掌握全班學習盲點
 - 🧠 **學生疑問焦點報告**：AI 分析全班提問紀錄，過濾閒聊並歸納疑惑主題與教學建議
 - ⚙️ **微服務架構**：Gateway + Main Service + AI Service
+
+<br />
 
 ## 架構 (Architecture)
 ```mermaid
@@ -145,6 +149,8 @@ sequenceDiagram
     deactivate AI
 ```
 
+<br />
+
 ## 過程 (The Process)
 
 我察覺到將即時社群互動（如 Discord）與透過 AI 學習相結合的可能性，於是開發了這款網路應用。
@@ -155,12 +161,16 @@ sequenceDiagram
 
 有了成員們與AI助教的聊天數據，就可以對群體性的學習難點進行統計與分析，能夠讓領導者掌握所有人的學習情況以及做出適當的指導方針。
 
+<br />
+
 ## 如何本地啟動專案 (Running the Project)
 1. Clone 此專案
 2. 設定 `.env`
 3. `docker-compose up -d` 啟動 Postgres / Redis / RabbitMQ / Nacos / Seata 等基礎設施
 4. 啟動 `Gateway`, `Main`, `Ai` 三個 Spring Boot 服務
 5. 瀏覽器打開 `http://localhost:8080/swagger-ui.html` 查看 API
+
+<br />
 
 ## 預覽 (Preview)
 [預覽影片](https://github.com/user-attachments/assets/73396abe-6b14-4c0d-80cd-74e021412652)
