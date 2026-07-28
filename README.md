@@ -11,7 +11,7 @@
     <a href="https://classcord.hys-lab.com"><b>Website</b></a> •
     <a href=""><b>Documentation</b></a>
 </p>
-<br />
+<br /><br />
 
 ![Classcord 封面圖](https://i.ibb.co/pvQFh7ks/cover-crop-rounded-24.png)
 
