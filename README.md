@@ -13,7 +13,7 @@
 </p>
 
 <br /><br />
-![Classcord 封面圖](https://i.ibb.co/cScjLVyC/cover-crop.png)
+![Classcord 封面圖](https://i.ibb.co/XZd3CHCR/cover-crop-rounded-48.png)
 
 # Classcord
 
