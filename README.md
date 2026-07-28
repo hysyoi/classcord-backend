@@ -151,7 +151,7 @@ sequenceDiagram
 
 <br />
 
-## 📍 過程 (The Process)
+## 🔭 過程 (The Process)
 
 我察覺到將即時社群互動（如 Discord）與透過 AI 學習相結合的可能性，於是開發了這款網路應用。
 
