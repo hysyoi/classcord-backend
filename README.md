@@ -26,7 +26,7 @@
 
 ## 🌟 技術 (Technologies)
 - `Java 21`
-- `Spring Cloud  (Nacos, Gateway, Open Feign, Sentinel, Seata)`
+- `Spring Cloud (Nacos, Gateway, Open Feign, Sentinel, Seata)`
 - `Spring AI`
 - `Spring Security`
 - `Spring Boot 3`
