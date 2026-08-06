@@ -1,34 +1,35 @@
-services:
+services: {}   # 目前這台機器沒有任何 docker-compose 服務了，全部改由 k3s 管理
   # ClassCord AI 專屬微服務 (Droplet #2 - 獨立運算機)
-  ai-service:
-    image: ghcr.io/hysyoi/classcord-ai-service:${IMAGE_TAG:-latest}
-    container_name: classcord_ai_service_prod
-    restart: always
-    ports:
-      - "8082:8082"
-    environment:
-      - SPRING_PROFILES_ACTIVE=prod
-      # 透過 Droplet #1 的私有內網 IP 連線至 Nacos, Postgres, Redis, RabbitMQ
-      - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
-      - NACOS_SERVER_ADDR=${DROPLET1_PRIVATE_IP}:8848
-      - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET2_PRIVATE_IP}
-      - NACOS_NAMESPACE=prod
-      - SENTINEL_DASHBOARD_ADDR=${DROPLET1_PRIVATE_IP}:8858
-      - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-${DROPLET1_PRIVATE_IP}:8091}
-      - DB_USERNAME=${DB_USERNAME}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://${DROPLET1_PRIVATE_IP}:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms
-      - SPRING_DATA_REDIS_HOST=${DROPLET1_PRIVATE_IP}
-      - SPRING_RABBITMQ_HOST=${DROPLET1_PRIVATE_IP}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - S3_ENDPOINT=${S3_ENDPOINT}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
-      - S3_SECRET_KEY=${S3_SECRET_KEY}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
-      - S3_PUBLIC_URL=${S3_PUBLIC_URL}
-      - APP_BACKEND_URL=${APP_BACKEND_URL}
-      - APP_FRONTEND_URL=${APP_FRONTEND_URL}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+  # 已改由 k3s 管理（見 k8s/ai-service-deployment.yaml，Pod 排程在 Droplet 2 這個 agent 節點上），保留原本設定備查，勿刪除
+  # ai-service:
+  #   image: ghcr.io/hysyoi/classcord-ai-service:${IMAGE_TAG:-latest}
+  #   container_name: classcord_ai_service_prod
+  #   restart: always
+  #   ports:
+  #     - "8082:8082"
+  #   environment:
+  #     - SPRING_PROFILES_ACTIVE=prod
+  #     # 透過 Droplet #1 的私有內網 IP 連線至 Nacos, Postgres, Redis, RabbitMQ
+  #     - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
+  #     - NACOS_SERVER_ADDR=${DROPLET1_PRIVATE_IP}:8848
+  #     - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET2_PRIVATE_IP}
+  #     - NACOS_NAMESPACE=prod
+  #     - SENTINEL_DASHBOARD_ADDR=${DROPLET1_PRIVATE_IP}:8858
+  #     - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-${DROPLET1_PRIVATE_IP}:8091}
+  #     - DB_USERNAME=${DB_USERNAME}
+  #     - DB_PASSWORD=${DB_PASSWORD}
+  #     - SPRING_DATASOURCE_URL=jdbc:postgresql://${DROPLET1_PRIVATE_IP}:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms
+  #     - SPRING_DATA_REDIS_HOST=${DROPLET1_PRIVATE_IP}
+  #     - SPRING_RABBITMQ_HOST=${DROPLET1_PRIVATE_IP}
+  #     - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
+  #     - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+  #     - GEMINI_API_KEY=${GEMINI_API_KEY}
+  #     - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+  #     - S3_ENDPOINT=${S3_ENDPOINT}
+  #     - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+  #     - S3_SECRET_KEY=${S3_SECRET_KEY}
+  #     - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+  #     - S3_PUBLIC_URL=${S3_PUBLIC_URL}
+  #     - APP_BACKEND_URL=${APP_BACKEND_URL}
+  #     - APP_FRONTEND_URL=${APP_FRONTEND_URL}
+  #     - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}

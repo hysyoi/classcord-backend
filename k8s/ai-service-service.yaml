@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: classcord
+spec:
+  selector:
+    app: ai-service
+  type: ClusterIP
+  ports:
+  - port: 8082
+    targetPort: 8082

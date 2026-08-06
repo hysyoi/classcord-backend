@@ -1,31 +1,35 @@
 services:
   # 0. Nacos 服務發現與配置中心 (Spring Cloud 微服務註冊中心)
-  nacos:
-    image: nacos/nacos-server:v2.3.2-slim
-    container_name: classcord_nacos_prod
-    restart: always
-    environment:
-      MODE: standalone
-      JVM_XMS: 128m
-      JVM_XMX: 256m
-    ports:
-      - "8848:8848"
-      - "9848:9848"
-    volumes:
-      - nacosdata_prod:/home/nacos/data
-      - nacoslogs_prod:/home/nacos/logs
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:8848/nacos/v1/ns/operator/switches || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
-      start_period: 30s
+  # 已改由 k3s 管理（見 k8s/nacos-deployment.yaml），保留原本設定備查，勿刪除
+  # 注意：nacosdata_prod / nacoslogs_prod 這兩個 volume 先別刪，裡面是舊資料，
+  # 遷移設定檔到新 Nacos 之前可能還用得到
+  # nacos:
+  #   image: nacos/nacos-server:v2.3.2-slim
+  #   container_name: classcord_nacos_prod
+  #   restart: always
+  #   environment:
+  #     MODE: standalone
+  #     JVM_XMS: 128m
+  #     JVM_XMX: 256m
+  #   ports:
+  #     - "8848:8848"
+  #     - "9848:9848"
+  #   volumes:
+  #     - nacosdata_prod:/home/nacos/data
+  #     - nacoslogs_prod:/home/nacos/logs
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -fs http://localhost:8848/nacos/v1/ns/operator/switches || exit 1"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 15
+  #     start_period: 30s
 
   # 1. PostgreSQL 資料庫服務 (啟用 pgvector 支援)
   postgres:
     image: pgvector/pgvector:pg16
     container_name: classcord_postgres_prod
     restart: always
+    mem_limit: 256m
     environment:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -46,6 +50,7 @@ services:
     image: redis:7.2-alpine
     container_name: classcord_redis_prod
     restart: always
+    mem_limit: 64m
     ports:
       - "6379:6379"
     volumes:
@@ -61,6 +66,7 @@ services:
     image: rabbitmq:3.13-management-alpine
     container_name: classcord_rabbitmq_prod
     restart: always
+    mem_limit: 256m
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
@@ -80,6 +86,7 @@ services:
     image: bladex/sentinel-dashboard:1.8.6
     container_name: classcord_sentinel_prod
     restart: always
+    mem_limit: 192m
     ports:
       - "8858:8858"
     environment:
@@ -90,6 +97,7 @@ services:
     image: seataio/seata-server:2.0.0
     container_name: classcord_seata_prod
     restart: always
+    mem_limit: 320m
     ports:
       - "8091:8091"
       - "7091:7091"
@@ -107,84 +115,87 @@ services:
         condition: service_healthy
 
   # 6. Spring Cloud API Gateway (Droplet #1 網關進入點)
-  gateway:
-    image: ghcr.io/hysyoi/classcord-gateway:${IMAGE_TAG:-latest}
-    container_name: classcord_gateway_prod
-    restart: always
-    ports:
-      - "127.0.0.1:8080:8080"
-    depends_on:
-      nacos:
-        condition: service_healthy
-    environment:
-      - SPRING_PROFILES_ACTIVE=prod
-      - JAVA_OPTS=-Xms128m -Xmx256m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
-      - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
-      - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET1_PRIVATE_IP}
-      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
-      - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
-      - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+  # 已改由 k3s 管理（見 k8s/gateway-deployment.yaml），保留原本設定備查，勿刪除
+  # gateway:
+  #   image: ghcr.io/hysyoi/classcord-gateway:${IMAGE_TAG:-latest}
+  #   container_name: classcord_gateway_prod
+  #   restart: always
+  #   ports:
+  #     - "127.0.0.1:8080:8080"
+  #   depends_on:
+  #     nacos:
+  #       condition: service_healthy
+  #   environment:
+  #     - SPRING_PROFILES_ACTIVE=prod
+  #     - JAVA_OPTS=-Xms128m -Xmx256m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
+  #     - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
+  #     - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET1_PRIVATE_IP}
+  #     - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
+  #     - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
+  #     - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
+  #     - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+  #     - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
 
   # 7. ClassCord 主業務服務 (Main Service)
-  main-service:
-    image: ghcr.io/hysyoi/classcord-main-service:${IMAGE_TAG:-latest}
-    container_name: classcord_main_service_prod
-    restart: always
-    ports:
-      - "8081:8081"
-    depends_on:
-      nacos:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      - SPRING_PROFILES_ACTIVE=prod
-      - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
-      - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
-      - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET1_PRIVATE_IP}
-      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
-      - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
-      - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
-      - DB_USERNAME=${DB_USERNAME}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms
-      - SPRING_DATA_REDIS_HOST=redis
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - S3_ENDPOINT=${S3_ENDPOINT}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
-      - S3_SECRET_KEY=${S3_SECRET_KEY}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
-      - S3_PUBLIC_URL=${S3_PUBLIC_URL}
-      - TURNSTILE_ENABLED=${TURNSTILE_ENABLED:-false}
-      - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY}
-      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
-      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
-      - SPRING_MAIL_PASSWORD=${SPRING_MAIL_PASSWORD}
-      - APP_BACKEND_URL=${APP_BACKEND_URL}
-      - APP_FRONTEND_URL=${APP_FRONTEND_URL}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
-      - MAIL_FROM_EMAIL=${MAIL_FROM_EMAIL}
+  # 已改由 k3s 管理（見 k8s/main-service-deployment.yaml），保留原本設定備查，勿刪除
+  # main-service:
+  #   image: ghcr.io/hysyoi/classcord-main-service:${IMAGE_TAG:-latest}
+  #   container_name: classcord_main_service_prod
+  #   restart: always
+  #   ports:
+  #     - "8081:8081"
+  #   depends_on:
+  #     nacos:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+  #   environment:
+  #     - SPRING_PROFILES_ACTIVE=prod
+  #     - JAVA_OPTS=-Xms256m -Xmx384m -XX:+UseG1GC -Djdk.virtualThreadScheduler.parallelism=4 -Djdk.virtualThreadScheduler.maxPoolSize=16 -Djdk.virtualThreadScheduler.minRunnable=2 -Djava.security.egd=file:/dev/./urandom
+  #     - NACOS_SERVER_ADDR=${NACOS_SERVER_ADDR:-nacos:8848}
+  #     - SPRING_CLOUD_NACOS_DISCOVERY_IP=${DROPLET1_PRIVATE_IP}
+  #     - NACOS_NAMESPACE=${NACOS_NAMESPACE:-prod}
+  #     - SENTINEL_DASHBOARD_ADDR=${SENTINEL_DASHBOARD_ADDR:-sentinel-dashboard:8858}
+  #     - SEATA_SERVER_ADDR=${SEATA_SERVER_ADDR:-seata-server:8091}
+  #     - DB_USERNAME=${DB_USERNAME}
+  #     - DB_PASSWORD=${DB_PASSWORD}
+  #     - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/classcord?reWriteBatchedInserts=true&options=-c%20lock_timeout=2000ms
+  #     - SPRING_DATA_REDIS_HOST=redis
+  #     - SPRING_RABBITMQ_HOST=rabbitmq
+  #     - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
+  #     - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+  #     - GEMINI_API_KEY=${GEMINI_API_KEY}
+  #     - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+  #     - S3_ENDPOINT=${S3_ENDPOINT}
+  #     - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+  #     - S3_SECRET_KEY=${S3_SECRET_KEY}
+  #     - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+  #     - S3_PUBLIC_URL=${S3_PUBLIC_URL}
+  #     - TURNSTILE_ENABLED=${TURNSTILE_ENABLED:-false}
+  #     - TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY}
+  #     - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
+  #     - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+  #     - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+  #     - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+  #     - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+  #     - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+  #     - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+  #     - SPRING_MAIL_PASSWORD=${SPRING_MAIL_PASSWORD}
+  #     - APP_BACKEND_URL=${APP_BACKEND_URL}
+  #     - APP_FRONTEND_URL=${APP_FRONTEND_URL}
+  #     - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+  #     - MAIL_FROM_EMAIL=${MAIL_FROM_EMAIL}
 
   # 8. Prometheus 監控資料收集器
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: classcord_prometheus_prod
     restart: always
+    mem_limit: 192m
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheusdata_prod:/prometheus
@@ -196,6 +207,7 @@ services:
     image: grafana/grafana:10.4.0
     container_name: classcord_grafana_prod
     restart: always
+    mem_limit: 192m
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -206,6 +218,7 @@ services:
     image: amir20/dozzle:latest
     container_name: classcord_dozzle_prod
     restart: always
+    mem_limit: 48m
     ports:
       - "127.0.0.1:8888:8080"
     volumes:

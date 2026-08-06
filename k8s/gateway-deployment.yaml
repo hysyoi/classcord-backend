@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: classcord
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 記憶體緊繃，先關舊的再開新的，換版本會短暫斷線，換取不會同時吃兩份記憶體
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      nodeSelector:
+        workload: main   # 釘在 Droplet 1，跟 nacos 同節點，避免跟 ai-service 搶 Droplet 2 的 CPU
+      containers:
+        - name: gateway
+          image: ghcr.io/hysyoi/classcord-gateway:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "384Mi"   # 實測一般流量下逼近舊上限 320Mi，調高留空間
+              cpu: "500m"
+          envFrom:
+            - configMapRef:
+                name: main-service-config
+            - secretRef:
+                name: main-service-secret
+          env:
+            - name: SENTINEL_DASHBOARD_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: main-service-config
+                  key: SENTINEL_DASHBOARD_ADDR
+            - name: JAVA_TOOL_OPTIONS
+              # 同 main-service 的修法：System.getProperties() 快照時機競態，改用 JVM 啟動參數繞過
+              value: "-Dcsp.sentinel.dashboard.server=$(SENTINEL_DASHBOARD_ADDR)"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
