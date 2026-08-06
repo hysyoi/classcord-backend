@@ -43,8 +43,7 @@ spec:
                   name: main-service-config
                   key: SENTINEL_DASHBOARD_ADDR
             - name: JAVA_TOOL_OPTIONS
-              # Spring 屬性間接設定 dashboard 位址對 sentinel-core 的 System.getProperties()
-              # 快照時機是競態關係，時常抓不到值；改用 JVM 啟動參數繞過這個問題
+              # 用 JVM 參數而非 Spring 屬性設定 dashboard 位址，避免 sentinel-core 讀取時機的競態問題
               value: "-Dcsp.sentinel.dashboard.server=$(SENTINEL_DASHBOARD_ADDR)"
           livenessProbe:
             httpGet:

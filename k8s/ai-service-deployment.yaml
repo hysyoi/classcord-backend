@@ -41,7 +41,7 @@ spec:
                   name: ai-service-config
                   key: SENTINEL_DASHBOARD_ADDR
             - name: JAVA_TOOL_OPTIONS
-              # 同 main-service 的修法：System.getProperties() 快照時機競態，改用 JVM 啟動參數繞過
+              # 用 JVM 參數而非 Spring 屬性設定 dashboard 位址，避免 sentinel-core 讀取時機的競態問題
               value: "-Dcsp.sentinel.dashboard.server=$(SENTINEL_DASHBOARD_ADDR)"
           livenessProbe:
             httpGet:

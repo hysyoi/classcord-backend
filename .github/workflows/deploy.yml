@@ -103,15 +103,15 @@ jobs:
             cd /opt/classcord-main
             export IMAGE_TAG=${{ github.ref_name }}
 
-            # 基礎設施 (nacos/postgres/redis/rabbitmq/seata 等) 幾乎不會跟著這次改動，
+            # 基礎設施 (nacos/postgres/redis/rabbitmq/seata 等) 幾乎不會改動，
             # 但留著這步是幂等的，不會影響已經在跑的容器，作為保險
             docker compose -f docker-compose.main.prod.yml pull
             docker compose -f docker-compose.main.prod.yml up -d
             docker image prune -f
 
-            # gateway、main-service、ai-service 三個服務已改由 k3s 管理，
-            # 先套用 git 裡最新的 manifest（資源上限、更新策略、nodeSelector 等結構性設定），
-            # 不會動到 Secret（那些從來不是檔案，維持手動管理）
+            # gateway、main-service、ai-service 三個服務由 k3s 管理
+            # namespace.yaml 要先單獨套用，避免全新叢集在命名空間建立前就套用其他資源而失敗
+            sudo k3s kubectl apply -f k8s/namespace.yaml
             sudo k3s kubectl apply -f k8s/
 
             # 再用 kubectl set image 把 image 換成這次實際發布的版本號
