@@ -39,6 +39,9 @@ public class ChatWebSocketController {
         }
 
         Timer.Sample sample = Timer.start(meterRegistry);
+        // 統一在 finally 記錄耗時，無論成功／被拒絕／例外都不會漏記，
+        // outcome 只有這三種固定值，基數有限，安全地拿來當 Tag 用
+        String outcome = "success";
         try {
             // 從 Principal (在 WebSocketConfig 中綁定) 獲取使用者 ID
             UUID userId = UUID.fromString(principal.getName());
@@ -62,6 +65,7 @@ public class ChatWebSocketController {
                         "拒絕跨伺服器 WebSocket 訊息發送嘗試: 請求路徑伺服器={}, 實際通道伺服器={}",
                         serverId,
                         actualServerId);
+                outcome = "rejected";
                 return;
             }
 
@@ -72,13 +76,12 @@ public class ChatWebSocketController {
             messagingTemplate.convertAndSend(
                     "/topic/servers/" + actualServerId + "/messages", response);
 
-            meterRegistry.counter("chat.message.sent", "outcome", "success").increment();
-            sample.stop(meterRegistry.timer("chat.message.broadcast"));
-
         } catch (Exception e) {
             // todo 發送失敗回傳訊息
             log.error("處理實時聊天訊息發生錯誤：", e);
-            meterRegistry.counter("chat.message.sent", "outcome", "error").increment();
+            outcome = "error";
+        } finally {
+            sample.stop(meterRegistry.timer("chat.message.broadcast", "outcome", outcome));
         }
     }
 }
