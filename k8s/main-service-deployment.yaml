@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: main-service
+  namespace: classcord
+spec:
+  replicas: 1   # Droplet 1 只有 4GB RAM，先開 1 份求穩，之後升級規格或加機器再拉高
+  strategy:
+    type: Recreate   # 記憶體緊繃，先關舊的再開新的，換版本會短暫斷線，換取不會同時吃兩份記憶體
+  selector:
+    matchLabels:
+      app: main-service
+  template:
+    metadata:
+      labels:
+        app: main-service
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      nodeSelector:
+        workload: main   # 釘在 Droplet 1，跟原本 docker-compose 設計一致
+      containers:
+        - name: main-service
+          image: ghcr.io/hysyoi/classcord-main-service:latest
+          ports:
+            - containerPort: 8081
+          resources:
+            requests:
+              memory: "448Mi"
+              cpu: "200m"
+            limits:
+              memory: "640Mi"   # 實測一般流量下逼近舊上限 512Mi，調高留空間
+              cpu: "1000m"
+          envFrom:
+            - configMapRef:
+                name: main-service-config
+            - secretRef:
+                name: main-service-secret
+          env:
+            - name: SENTINEL_DASHBOARD_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: main-service-config
+                  key: SENTINEL_DASHBOARD_ADDR
+            - name: JAVA_TOOL_OPTIONS
+              # 用 JVM 參數而非 Spring 屬性設定 dashboard 位址，避免 sentinel-core 讀取時機的競態問題
+              value: "-Dcsp.sentinel.dashboard.server=$(SENTINEL_DASHBOARD_ADDR)"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 90   # 對齊 Dockerfile 裡 HEALTHCHECK 的 start-period
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3

@@ -89,10 +89,10 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: "docker-compose.main.prod.yml,prometheus/prometheus.yml,scripts/init-db.prod.sql"
+          source: "docker-compose.main.prod.yml,prometheus/prometheus.yml,scripts/init-db.prod.sql,k8s"
           target: "/opt/classcord-main"
 
-      - name: SSH to Droplet #1 and Deploy Main Stack
+      - name: SSH to Droplet #1 — Update Infra Stack + Deploy 3 Services to k3s
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST_DROPLET1 || secrets.SSH_HOST }}
@@ -101,56 +101,33 @@ jobs:
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             cd /opt/classcord-main
-            echo "${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export IMAGE_TAG=${{ github.ref_name }}
+
+            # 基礎設施 (nacos/postgres/redis/rabbitmq/seata 等) 幾乎不會改動，
+            # 但留著這步是幂等的，不會影響已經在跑的容器，作為保險
             docker compose -f docker-compose.main.prod.yml pull
-            docker compose -f docker-compose.main.prod.yml up -d --force-recreate gateway main-service
+            docker compose -f docker-compose.main.prod.yml up -d
             docker image prune -f
 
-  # ==========================================================
-  # 任務 3：部署 Droplet #2 (AI 獨立運算機)
-  # ==========================================================
-  deploy-to-droplet2:
-    needs: build-and-push-images
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
+            # gateway、main-service、ai-service 三個服務由 k3s 管理
+            # namespace.yaml 要先單獨套用，避免全新叢集在命名空間建立前就套用其他資源而失敗
+            sudo k3s kubectl apply -f k8s/namespace.yaml
+            sudo k3s kubectl apply -f k8s/
 
-      - name: Copy AI Configuration File via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST_DROPLET2 || secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          source: "docker-compose.ai.prod.yml"
-          target: "/opt/classcord-ai"
+            # 再用 kubectl set image 把 image 換成這次實際發布的版本號
+            sudo k3s kubectl set image deployment/gateway gateway=ghcr.io/hysyoi/classcord-gateway:${IMAGE_TAG} -n classcord
+            sudo k3s kubectl set image deployment/main-service main-service=ghcr.io/hysyoi/classcord-main-service:${IMAGE_TAG} -n classcord
+            sudo k3s kubectl set image deployment/ai-service ai-service=ghcr.io/hysyoi/classcord-ai-service:${IMAGE_TAG} -n classcord
 
-      - name: SSH to Droplet #2 and Deploy AI Stack
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST_DROPLET2 || secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          script: |
-            cd /opt/classcord-ai
-            echo "${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            export IMAGE_TAG=${{ github.ref_name }}
-            export DROPLET1_PRIVATE_IP=${{ secrets.DROPLET1_PRIVATE_IP }}
-            docker compose -f docker-compose.ai.prod.yml pull
-            docker compose -f docker-compose.ai.prod.yml up -d --force-recreate ai-service
-            docker image prune -f
+            sudo k3s kubectl rollout status deployment/gateway -n classcord --timeout=180s
+            sudo k3s kubectl rollout status deployment/main-service -n classcord --timeout=180s
+            sudo k3s kubectl rollout status deployment/ai-service -n classcord --timeout=180s
 
   # ==========================================================
-  # 任務 4：雙機部署狀態 Discord 通知
+  # 任務 3：部署狀態 Discord 通知
   # ==========================================================
   notify:
-    needs: [deploy-to-droplet1, deploy-to-droplet2]
+    needs: [deploy-to-droplet1]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -159,11 +136,11 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_CD_WEBHOOK_URL }}
           status: ${{ job.status }}
-          content: "<@${{ secrets.DISCORD_USER_ID }}> 雙機 CD 自動化部署執行完畢！"
-          title: "🚀 ClassCord 微服務 雙機 CD 部署狀態"
+          content: "<@${{ secrets.DISCORD_USER_ID }}> CD 自動化部署執行完畢！"
+          title: "🚀 ClassCord 微服務 CD 部署狀態"
           description: |
             **版本 Tag**: `${{ github.ref_name }}`
             **觸發者**: `${{ github.actor }}`
-            **Droplet #1 (Main Stack)**: 已發布 Gateway & Main Service
-            **Droplet #2 (AI Stack)**: 已發布 AI Service
+            **k3s (Droplet 1 主節點 + Droplet 2 工作節點)**: 已發布 Gateway、Main Service、AI Service
+            **Droplet 1 基礎設施**: nacos/postgres/redis/rabbitmq/seata 等維持 docker-compose 管理
           nofail: true

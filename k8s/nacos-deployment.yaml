@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nacos
+  namespace: classcord
+spec:
+  replicas: 1   # standalone 模式，只能一份，不能像 main-service 那樣開多份
+  strategy:
+    type: Recreate   # 換版本時先關舊的再開新的，避免兩個實例同時搶同一份磁碟資料
+  selector:
+    matchLabels:
+      app: nacos
+  template:
+    metadata:
+      labels:
+        app: nacos
+    spec:
+      nodeSelector:
+        workload: main   # 釘在 Droplet 1：用了本地 PVC，飄到別的節點會連不到舊資料
+      containers:
+        - name: nacos
+          image: nacos/nacos-server:v2.3.2-slim
+          env:
+            - name: MODE
+              value: standalone
+            - name: JVM_XMS
+              value: 128m
+            - name: JVM_XMX
+              value: 256m
+          resources:
+            requests:
+              memory: "448Mi"
+              cpu: "100m"
+            limits:
+              memory: "576Mi"   # 服務數量一多、長連線變多，實測逼近舊上限，調高留空間
+              cpu: "500m"
+          ports:
+            - containerPort: 8848
+            - containerPort: 9848
+          volumeMounts:
+            - name: data
+              mountPath: /home/nacos/data
+            - name: logs
+              mountPath: /home/nacos/logs
+          readinessProbe:
+            httpGet:
+              path: /nacos/v1/ns/operator/switches
+              port: 8848
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nacos-data
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nacos-logs

@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: classcord
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      nodeSelector:
+        workload: ai   # 釘在 Droplet 2（要先幫那個節點打上這個標籤）
+      containers:
+        - name: ai-service
+          image: ghcr.io/hysyoi/classcord-ai-service:latest
+          ports:
+            - containerPort: 8082
+          resources:   # Droplet 2 是 1 vCPU / 2GB，只跑 ai-service 這一個工作，給寬鬆一點
+            requests:
+              memory: "512Mi"
+              cpu: "300m"
+            limits:
+              memory: "1024Mi"   # 對齊 Dockerfile 的 -XX:MaxRAMPercentage=75.0，heap 約落在 768Mi
+              cpu: "800m"
+          envFrom:
+            - configMapRef:
+                name: ai-service-config
+            - secretRef:
+                name: ai-service-secret
+          env:
+            - name: SENTINEL_DASHBOARD_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-service-config
+                  key: SENTINEL_DASHBOARD_ADDR
+            - name: JAVA_TOOL_OPTIONS
+              # 用 JVM 參數而非 Spring 屬性設定 dashboard 位址，避免 sentinel-core 讀取時機的競態問題
+              value: "-Dcsp.sentinel.dashboard.server=$(SENTINEL_DASHBOARD_ADDR)"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
