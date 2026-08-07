@@ -8,8 +8,8 @@
 <p align="center"><b>AI 驅動的社群學習網路應用</b></p>
 
 <p align="center">
-    <a href="https://classcord.hys-lab.com"><b>Website</b></a> •
-    <a href=""><b>Documentation</b></a>
+    <a href="https://classcord.hys-lab.com" target="_blank"><b>Website</b></a> •
+    <a href="https://docs-classcord.hys-lab.com/" target="_blank"><b>Documentation</b></a>
 </p>
 <br /><br />
 
