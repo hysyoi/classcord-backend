@@ -37,6 +37,7 @@
 - `GitHub Actions (CI / CD)`
 - `Backblaze B2`
 - `Flyway`
+- `Kubernetes (K3s)`
 
 <br />
 
