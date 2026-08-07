@@ -189,13 +189,21 @@ public class PresenceService {
      *
      * <p>注意：@Async 只有透過 Spring 的代理呼叫才會生效，同一個類別內部直接呼叫方法（this.xxx()）會繞過代理、
      * 不會真的非同步，因此這裡刻意透過事件機制觸發，而不是讓 handleConnect 直接呼叫這個方法。
+     *
+     * <p>廣播內容刻意重新查詢 {@link #isOnline} 取得當下的即時狀態，而不是直接信任事件當初捕捉到的 {@code online}
+     * 快照值：事件是非同步處理的，短時間內連續斷線又重連（例如分頁重整、網路瞬斷）會依序發出
+     * 「離線」「上線」兩個事件，但兩者各自被分派到獨立的執行緒處理，處理順序不保證跟發生順序一致。若直接信任
+     * 事件本身的欄位，較晚才處理完的「離線」事件可能把使用者已經重新連線的真實狀態覆蓋掉，讓前端誤判本人離線。 改成在真正送出廣播的當下才查詢 Redis
+     * 現況，無論事件處理順序為何，每一次廣播都會自我修正為當下的真實狀態。
      */
     @Async
     @EventListener
     public void onPresenceChanged(PresenceEvent event) {
+        PresenceEvent freshEvent = new PresenceEvent(event.userId(), isOnline(event.userId()));
         List<UUID> serverIds = serverMemberRepository.findServerIdsByUserId(event.userId());
         for (UUID serverId : serverIds) {
-            messagingTemplate.convertAndSend("/topic/servers/" + serverId + "/presence", event);
+            messagingTemplate.convertAndSend(
+                    "/topic/servers/" + serverId + "/presence", freshEvent);
         }
     }
 }
