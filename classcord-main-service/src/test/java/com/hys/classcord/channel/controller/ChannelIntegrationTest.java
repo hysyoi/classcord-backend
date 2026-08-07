@@ -26,7 +26,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-// todo 有時間再寫單元測試
 public class ChannelIntegrationTest extends BaseIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
@@ -80,48 +79,52 @@ public class ChannelIntegrationTest extends BaseIntegrationTest {
                         .build());
     }
 
-    @Test
-    void testChannelLifecycleAndPermissions() throws Exception {
-        UUID serverId = testServer.getId();
-
-        // 1. 建立第一個頻道
-        CreateChannelRequest req1 = new CreateChannelRequest("General", ChannelType.GENERAL);
-        String resJson1 =
+    // 以老師身分建立頻道，回傳頻道 ID，供需要「已存在頻道」的測試重用
+    private UUID createChannel(String name, ChannelType type) throws Exception {
+        CreateChannelRequest req = new CreateChannelRequest(name, type);
+        String resJson =
                 mockMvc.perform(
-                                post("/v1/servers/" + serverId + "/channels")
+                                post("/v1/servers/" + testServer.getId() + "/channels")
                                         .header("Authorization", teacherToken)
                                         .contentType(MediaType.APPLICATION_JSON)
-                                        .content(objectMapper.writeValueAsString(req1)))
+                                        .content(objectMapper.writeValueAsString(req)))
                         .andExpect(status().isCreated())
                         .andReturn()
                         .getResponse()
                         .getContentAsString();
-        UUID channelId1 = UUID.fromString(objectMapper.readTree(resJson1).get("id").asText());
+        return UUID.fromString(objectMapper.readTree(resJson).get("id").asText());
+    }
+
+    // 只有老師能建立頻道，學生嘗試建立應被拒絕
+    @Test
+    void testCreateChannel_TeacherOnly() throws Exception {
+        createChannel("General", ChannelType.GENERAL);
 
         // 學生建頻道 ➔ 失敗
+        CreateChannelRequest req = new CreateChannelRequest("General", ChannelType.GENERAL);
         mockMvc.perform(
-                        post("/v1/servers/" + serverId + "/channels")
+                        post("/v1/servers/" + testServer.getId() + "/channels")
                                 .header("Authorization", studentToken)
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(req1)))
+                                .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden());
+    }
 
-        // 2. 建立第二個頻道 (確認 position 自增)
-        CreateChannelRequest req2 = new CreateChannelRequest("Materials", ChannelType.MATERIAL);
-        String resJson2 =
-                mockMvc.perform(
-                                post("/v1/servers/" + serverId + "/channels")
-                                        .header("Authorization", teacherToken)
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .content(objectMapper.writeValueAsString(req2)))
-                        .andExpect(status().isCreated())
-                        .andReturn()
-                        .getResponse()
-                        .getContentAsString();
-        UUID channelId2 = UUID.fromString(objectMapper.readTree(resJson2).get("id").asText());
+    // 依序建立多個頻道時，position 應該自動遞增
+    @Test
+    void testCreateChannel_PositionAutoIncrements() throws Exception {
+        UUID channelId1 = createChannel("General", ChannelType.GENERAL);
+        UUID channelId2 = createChannel("Materials", ChannelType.MATERIAL);
 
         assertEquals(0, channelRepository.findById(channelId1).get().getPosition());
         assertEquals(1, channelRepository.findById(channelId2).get().getPosition());
+    }
+
+    // 老師看得到全部頻道（含管理員頻道），學生的頻道列表應該把管理員頻道過濾掉
+    @Test
+    void testListChannels_FiltersAdminChannelForStudents() throws Exception {
+        createChannel("General", ChannelType.GENERAL);
+        createChannel("Materials", ChannelType.MATERIAL);
 
         // 建立一個 ADMIN 頻道 (藉由 repository 直接寫入以模擬預設的管理頻道，因為 API 已阻擋手動新增 ADMIN 頻道)
         channelRepository.save(
@@ -132,10 +135,10 @@ public class ChannelIntegrationTest extends BaseIntegrationTest {
                         .position(2)
                         .build());
 
-        // 3. 頻道隱私過濾：老師應看到 3 個，學生只應看到 2 個
+        // 老師應看到 3 個，學生只應看到 2 個 (ADMIN 頻道被過濾)
         String resTeacher =
                 mockMvc.perform(
-                                get("/v1/servers/" + serverId + "/channels")
+                                get("/v1/servers/" + testServer.getId() + "/channels")
                                         .header("Authorization", teacherToken))
                         .andExpect(status().isOk())
                         .andReturn()
@@ -145,21 +148,39 @@ public class ChannelIntegrationTest extends BaseIntegrationTest {
 
         String resStudent =
                 mockMvc.perform(
-                                get("/v1/servers/" + serverId + "/channels")
+                                get("/v1/servers/" + testServer.getId() + "/channels")
                                         .header("Authorization", studentToken))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
                         .getContentAsString();
         assertEquals(2, objectMapper.readTree(resStudent).size());
+    }
 
-        // 4. 批量排序 (對調 position)
+    // 非班級成員的局外人查詢頻道列表 ➔ 應該被拒絕
+    @Test
+    void testListChannels_OutsiderForbidden() throws Exception {
+        createChannel("General", ChannelType.GENERAL);
+
+        mockMvc.perform(
+                        get("/v1/servers/" + testServer.getId() + "/channels")
+                                .header("Authorization", outsiderToken))
+                .andExpect(status().isForbidden());
+    }
+
+    // 批量調整頻道順序後，各頻道的 position 應該正確更新
+    @Test
+    void testReorderChannels_UpdatesPositions() throws Exception {
+        UUID channelId1 = createChannel("General", ChannelType.GENERAL);
+        UUID channelId2 = createChannel("Materials", ChannelType.MATERIAL);
+
+        // 批量排序 (對調 position)
         List<ChannelPositionDto> reorderList =
                 List.of(
                         new ChannelPositionDto(channelId1, 1),
                         new ChannelPositionDto(channelId2, 0));
         mockMvc.perform(
-                        put("/v1/servers/" + serverId + "/channels/positions")
+                        put("/v1/servers/" + testServer.getId() + "/channels/positions")
                                 .header("Authorization", teacherToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(reorderList)))
@@ -167,14 +188,9 @@ public class ChannelIntegrationTest extends BaseIntegrationTest {
 
         assertEquals(1, channelRepository.findById(channelId1).get().getPosition());
         assertEquals(0, channelRepository.findById(channelId2).get().getPosition());
-
-        // 5. 局外人獲取列表 ➔ 應失敗被阻擋 (403 Forbidden)
-        mockMvc.perform(
-                        get("/v1/servers/" + serverId + "/channels")
-                                .header("Authorization", outsiderToken))
-                .andExpect(status().isForbidden());
     }
 
+    // 管理員頻道只能由系統自動建立，任何人透過 API 手動建立都應該被拒絕
     @Test
     void testCannotCreateAdminChannel() throws Exception {
         UUID serverId = testServer.getId();

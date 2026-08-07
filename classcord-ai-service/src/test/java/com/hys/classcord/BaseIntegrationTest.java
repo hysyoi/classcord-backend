@@ -1,9 +1,12 @@
 package com.hys.classcord;
 
 import com.hys.classcord.ai.ClasscordAiApplication;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -17,4 +20,12 @@ public abstract class BaseIntegrationTest {
 
     @MockBean protected S3Client s3Client;
     @MockBean protected S3Presigner s3Presigner;
+
+    @Autowired private RedisConnectionFactory redisConnectionFactory;
+
+    // Redis 不在 @Transactional 的 rollback 範圍內，測試結束後手動清空。
+    @AfterEach
+    void flushRedis() {
+        redisConnectionFactory.getConnection().serverCommands().flushDb();
+    }
 }

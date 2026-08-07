@@ -30,12 +30,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -57,7 +54,6 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
     @Autowired private ChannelRepository channelRepository;
     @Autowired private MessageRepository messageRepository;
     @Autowired private MaterialRepository materialRepository;
-    @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private RabbitTemplate rabbitTemplate;
@@ -74,11 +70,6 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-
-        // 清理測試相關的 Redis Key，確保測試環境乾淨
-        redisTemplate.delete("QUOTA:SYSTEM:USED");
-        redisTemplate.keys("RATE_LIMIT:UPLOAD:*").forEach(redisTemplate::delete);
-        redisTemplate.keys("PENDING_UPLOAD:*").forEach(redisTemplate::delete);
 
         // 1. 初始化使用者與 Token
         teacher =
@@ -170,45 +161,29 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                 .headObject(any(HeadObjectRequest.class));
     }
 
-    @Test
-    void testMaterialUploadAndLifecycle() throws Exception {
-        // ==========================================
-        // 1. 申請預簽名上傳網址權限測試
-        // ==========================================
-
-        // 1.1 教師申請上傳網址 ➔ 成功 (200 OK)
+    // 以老師身分申請上傳網址，回傳 UploadUrlResponse，供需要「已取得上傳網址」的測試重用
+    private UploadUrlResponse requestUploadUrl(String filename) throws Exception {
         String uploadUrlRes =
                 mockMvc.perform(
                                 get("/v1/channels/"
                                                 + materialChannel.getId()
                                                 + "/materials/upload-url")
                                         .header("Authorization", teacherToken)
-                                        .param("filename", "syllabus.pdf")
+                                        .param("filename", filename)
                                         .param("contentType", "application/pdf")
                                         .param("fileSize", "102400")) // 100KB
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
                         .getContentAsString();
+        return objectMapper.readValue(uploadUrlRes, UploadUrlResponse.class);
+    }
 
-        UploadUrlResponse uploadResponse =
-                objectMapper.readValue(uploadUrlRes, UploadUrlResponse.class);
-        assertNotNull(uploadResponse.uploadUrl());
-        assertNotNull(uploadResponse.fileKey());
-        assertTrue(uploadResponse.fileKey().startsWith("temp/"));
+    private record PublishedMaterial(UUID messageId, UUID materialId) {}
 
-        // 1.2 學生申請上傳網址 ➔ 失敗 (403 Forbidden)
-        mockMvc.perform(
-                        get("/v1/channels/" + materialChannel.getId() + "/materials/upload-url")
-                                .header("Authorization", studentToken)
-                                .param("filename", "syllabus.pdf")
-                                .param("contentType", "application/pdf")
-                                .param("fileSize", "102400"))
-                .andExpect(status().isForbidden());
-
-        // ==========================================
-        // 2. 發布教材貼文權限測試
-        // ==========================================
+    // 以老師身分完整跑完「申請上傳網址 ➔ 發布教材貼文」流程，供需要「已存在教材」的測試重用
+    private PublishedMaterial publishMaterial() throws Exception {
+        UploadUrlResponse uploadResponse = requestUploadUrl("syllabus.pdf");
 
         CreateMaterialRequest postRequest =
                 new CreateMaterialRequest(
@@ -218,15 +193,6 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                         "syllabus.pdf",
                         102400L);
 
-        // 2.1 學生發布教材貼文 ➔ 失敗 (403 Forbidden)
-        mockMvc.perform(
-                        post("/v1/channels/" + materialChannel.getId() + "/materials")
-                                .header("Authorization", studentToken)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(postRequest)))
-                .andExpect(status().isForbidden());
-
-        // 2.2 教師確認發布教材貼文 ➔ 成功 (201 Created)
         String createdMessageJson =
                 mockMvc.perform(
                                 post("/v1/channels/" + materialChannel.getId() + "/materials")
@@ -248,17 +214,66 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                                 .get(0)
                                 .get("id")
                                 .asText());
-        assertNotNull(messageId);
-        assertNotNull(materialId);
+        return new PublishedMaterial(messageId, materialId);
+    }
 
-        // ==========================================
-        // 3. 獲取教材詳情與下載連結測試
-        // ==========================================
+    // 只有老師能申請教材上傳網址，學生申請應被拒絕
+    @Test
+    void testRequestUploadUrl_TeacherOnly() throws Exception {
+        // 教師申請上傳網址 ➔ 成功 (200 OK)
+        UploadUrlResponse uploadResponse = requestUploadUrl("syllabus.pdf");
+        assertNotNull(uploadResponse.uploadUrl());
+        assertNotNull(uploadResponse.fileKey());
+        assertTrue(uploadResponse.fileKey().startsWith("temp/"));
 
-        // 3.1 班級成員(學生)獲取教材詳情 ➔ 成功 (200 OK)，且拿到臨時下載 url
+        // 學生申請上傳網址 ➔ 失敗 (403 Forbidden)
+        mockMvc.perform(
+                        get("/v1/channels/" + materialChannel.getId() + "/materials/upload-url")
+                                .header("Authorization", studentToken)
+                                .param("filename", "syllabus.pdf")
+                                .param("contentType", "application/pdf")
+                                .param("fileSize", "102400"))
+                .andExpect(status().isForbidden());
+    }
+
+    // 只有老師能發布教材貼文，學生發布應被拒絕
+    @Test
+    void testPublishMaterial_TeacherOnly() throws Exception {
+        UploadUrlResponse uploadResponse = requestUploadUrl("syllabus.pdf");
+        CreateMaterialRequest postRequest =
+                new CreateMaterialRequest(
+                        "各位同學好，這是本學期的教學大綱",
+                        uploadResponse.fileKey(),
+                        "pdf",
+                        "syllabus.pdf",
+                        102400L);
+
+        // 學生發布教材貼文 ➔ 失敗 (403 Forbidden)
+        mockMvc.perform(
+                        post("/v1/channels/" + materialChannel.getId() + "/materials")
+                                .header("Authorization", studentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(postRequest)))
+                .andExpect(status().isForbidden());
+
+        // 教師確認發布教材貼文 ➔ 成功 (201 Created)
+        mockMvc.perform(
+                        post("/v1/channels/" + materialChannel.getId() + "/materials")
+                                .header("Authorization", teacherToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(postRequest)))
+                .andExpect(status().isCreated());
+    }
+
+    // 班級成員（學生）可查詢教材詳情並取得下載連結，非成員（局外人）應被拒絕
+    @Test
+    void testGetMaterialDetail_MemberOnly() throws Exception {
+        PublishedMaterial material = publishMaterial();
+
+        // 班級成員(學生)獲取教材詳情 ➔ 成功 (200 OK)，且拿到臨時下載 url
         String getMaterialRes =
                 mockMvc.perform(
-                                get("/v1/materials/" + materialId)
+                                get("/v1/materials/" + material.materialId())
                                         .header("Authorization", studentToken))
                         .andExpect(status().isOk())
                         .andReturn()
@@ -268,27 +283,30 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
         String fileUrl = objectMapper.readTree(getMaterialRes).get("fileUrl").asText();
         assertEquals("https://s3.us-west-004.backblazeb2.com/classcord/mock-download-url", fileUrl);
 
-        // 3.2 局外人(Outsider)獲取教材詳情 ➔ 失敗 (403 Forbidden)
-        mockMvc.perform(get("/v1/materials/" + materialId).header("Authorization", outsiderToken))
+        // 局外人(Outsider)獲取教材詳情 ➔ 失敗 (403 Forbidden)
+        mockMvc.perform(
+                        get("/v1/materials/" + material.materialId())
+                                .header("Authorization", outsiderToken))
                 .andExpect(status().isForbidden());
+    }
 
-        // ==========================================
-        // 4. 刪除訊息連帶刪除 B2 檔案與 DB 關聯測試
-        // ==========================================
+    // 刪除教材訊息後，應連帶刪除 S3 上的實體檔案，且資料庫中的訊息與教材紀錄也要正確清除
+    @Test
+    void testDeleteMaterialMessage_CascadesToS3AndDatabase() throws Exception {
+        PublishedMaterial material = publishMaterial();
 
-        // 4.1 教師刪除該條教材訊息
-        mockMvc.perform(delete("/v1/messages/" + messageId).header("Authorization", teacherToken))
+        // 教師刪除該條教材訊息
+        mockMvc.perform(
+                        delete("/v1/messages/" + material.messageId())
+                                .header("Authorization", teacherToken))
                 .andExpect(status().isNoContent());
 
         // 觸發在測試交易中註冊的 afterCommit 回呼以發送 MQ 訊息
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.getSynchronizations()
-                    .forEach(TransactionSynchronization::afterCommit);
-        }
+        triggerAfterCommitCallbacks();
 
         // 驗證 A: JPA 查不到該條 message 和 material
-        assertFalse(messageRepository.existsById(messageId));
-        assertFalse(materialRepository.existsById(materialId));
+        assertFalse(messageRepository.existsById(material.messageId()));
+        assertFalse(materialRepository.existsById(material.materialId()));
 
         // 驗證 B: S3 刪除方法有被調用 (非同步等待 RabbitMQ Consumer 執行)
         verify(s3Client, timeout(3000).atLeastOnce()).deleteObject(any(DeleteObjectRequest.class));
@@ -296,16 +314,21 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
         // 驗證 C: 透過 Native SQL 檢查軟刪除在 DB 層面確實將 messages.deleted 設為 true
         Boolean messageDeleted =
                 jdbcTemplate.queryForObject(
-                        "SELECT deleted FROM messages WHERE id = ?", Boolean.class, messageId);
+                        "SELECT deleted FROM messages WHERE id = ?",
+                        Boolean.class,
+                        material.messageId());
         assertTrue(messageDeleted, "資料庫中的 deleted 欄位應為 true");
 
         // 驗證 D: materials 資料表中的實體，已被刪除（因為 materials 本身未設軟刪除）
         Integer materialCount =
                 jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM materials WHERE id = ?", Integer.class, materialId);
+                        "SELECT COUNT(*) FROM materials WHERE id = ?",
+                        Integer.class,
+                        material.materialId());
         assertEquals(0, materialCount, "教材關聯紀錄應該已被物理刪除");
     }
 
+    // 申請上傳的檔案超過班級容量上限時，應該被攔截拒絕
     @Test
     void testUploadQuotaValidation() throws Exception {
         // 測試全站/班級容量配額超出限制的攔截
@@ -322,6 +345,7 @@ public class MaterialIntegrationTest extends BaseIntegrationTest {
                         status().isPayloadTooLarge()); // 應拋出自訂例外，最後被全域 Exception Handler 攔截返回 413
     }
 
+    // S3 刪除持續失敗、重試用盡後，任務訊息應該被轉移到死信佇列，不會憑空消失
     @Test
     void testDeadLetterQueueOnFailure() throws Exception {
         // 0. 清空死信佇列中先前的殘留訊息
