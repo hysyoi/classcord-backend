@@ -23,6 +23,7 @@ spec:
           args:
             - '--config.file=/etc/prometheus/prometheus.yml'
             - '--storage.tsdb.path=/prometheus'
+            - '--web.enable-lifecycle'
           ports:
             - containerPort: 9090
           resources:
@@ -51,8 +52,9 @@ spec:
             periodSeconds: 15
       volumes:
         - name: config
-          # ConfigMap 更新後既有的 Pod 不會自動重讀設定，改完 scrape target 要手動：
-          # kubectl rollout restart deployment/prometheus -n classcord
+          # ConfigMap 更新後 Pod 裡的檔案會自動同步，但 Prometheus 程序不會自己重讀，
+          # 開了 --web.enable-lifecycle，改完 scrape target 用這個讓它生效即可，不用重啟 Pod：
+          # kubectl exec -n classcord deploy/prometheus -- wget --post-data='' -qO- http://localhost:9090/-/reload
           configMap:
             name: prometheus-config
         - name: data
