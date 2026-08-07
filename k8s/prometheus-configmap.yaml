@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: classcord
+data:
+  # gateway/main-service/ai-service 都在同個 namespace 裡，直接用 Service 短名稱即可被 CoreDNS 解析，
+  # 不用再像外部的 docker-compose Prometheus 那樣猜 ClusterIP 或開 NodePort
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'classcord-gateway'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['gateway:8080']
+
+      - job_name: 'classcord-main-service'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['main-service:8081']
+
+      - job_name: 'classcord-ai-service'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['ai-service:8082']

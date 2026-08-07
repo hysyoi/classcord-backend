@@ -191,27 +191,33 @@ services:
   #     - MAIL_FROM_EMAIL=${MAIL_FROM_EMAIL}
 
   # 8. Prometheus 監控資料收集器
-  prometheus:
-    image: prom/prometheus:v2.51.0
-    container_name: classcord_prometheus_prod
-    restart: always
-    mem_limit: 192m
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheusdata_prod:/prometheus
-    ports:
-      - "127.0.0.1:9090:9090"
+  # 已改由 k3s 管理（見 k8s/prometheus-deployment.yaml），保留原本設定備查，勿刪除
+  # 舊版靠 docker-compose 網路用容器名稱互連，遷去 k3s 後 gateway/main-service 已經不在
+  # 同一個網路裡，這份設定連不到它們，才會做這次遷移
+  # 注意：prometheusdata_prod 這個 volume 先別刪，裡面是舊的監控歷史資料
+  # prometheus:
+  #   image: prom/prometheus:v2.51.0
+  #   container_name: classcord_prometheus_prod
+  #   restart: always
+  #   mem_limit: 192m
+  #   volumes:
+  #     - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - prometheusdata_prod:/prometheus
+  #   ports:
+  #     - "127.0.0.1:9090:9090"
 
   # 9. Grafana 視覺化數據儀表板
-  grafana:
-    image: grafana/grafana:10.4.0
-    container_name: classcord_grafana_prod
-    restart: always
-    mem_limit: 192m
-    ports:
-      - "127.0.0.1:3000:3000"
-    volumes:
-      - grafanadata_prod:/var/lib/grafana
+  # 已改由 k3s 管理（見 k8s/grafana-deployment.yaml），保留原本設定備查，勿刪除
+  # 注意：grafanadata_prod 這個 volume 先別刪，裡面是舊的儀表板/資料源設定
+  # grafana:
+  #   image: grafana/grafana:10.4.0
+  #   container_name: classcord_grafana_prod
+  #   restart: always
+  #   mem_limit: 192m
+  #   ports:
+  #     - "127.0.0.1:3000:3000"
+  #   volumes:
+  #     - grafanadata_prod:/var/lib/grafana
 
   # 10. Dozzle 即時容器日誌檢視工具
   dozzle:
