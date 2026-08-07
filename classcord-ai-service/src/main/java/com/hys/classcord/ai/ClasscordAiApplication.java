@@ -10,6 +10,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.hys.classcord")
@@ -17,6 +18,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @EnableJpaRepositories(basePackages = "com.hys.classcord")
 @EnableJpaAuditing
 @EnableAsync
+@EnableScheduling // 開啟 @Scheduled 定時任務支援（AI 使用量指標定期刷新用）
 @ConfigurationPropertiesScan(basePackages = "com.hys.classcord")
 @SpringBootApplication(
         scanBasePackages = "com.hys.classcord",

@@ -2,6 +2,9 @@ package com.hys.classcord.presence.service;
 
 import com.hys.classcord.presence.dto.PresenceEvent;
 import com.hys.classcord.server.repository.ServerMemberRepository;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collection;
@@ -53,6 +56,7 @@ public class PresenceService {
     private final SimpUserRegistry simpUserRegistry;
     private final ServerMemberRepository serverMemberRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final MeterRegistry meterRegistry;
 
     // 把「計數 + 條件式刪除」包成 Lua script 原子執行，避免 DECR 到 0 跟刪除 key 這兩步中間，
     // 被一個緊接著到來的新連線插隊（該連線的 INCR 會被夾在中間，若沒包成原子操作，可能被誤刪）
@@ -70,6 +74,14 @@ public class PresenceService {
             redisTemplate.delete(connKeys);
         }
         log.info("已清空殘留的在線狀態資料（服務重啟）");
+    }
+
+    /** 用 SimpUserRegistry 現成的即時連線數註冊 Gauge，不用另外查 Redis，成本近乎為零。 */
+    @PostConstruct
+    void registerMetrics() {
+        Gauge.builder("presence.online.users", simpUserRegistry, SimpUserRegistry::getUserCount)
+                .description("目前在線人數（WebSocket 連線使用者數）")
+                .register(meterRegistry);
     }
 
     /**

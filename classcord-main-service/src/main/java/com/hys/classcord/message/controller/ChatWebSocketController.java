@@ -5,6 +5,8 @@ import com.hys.classcord.message.dto.MessageResponse;
 import com.hys.classcord.message.dto.WsMessageRequest;
 import com.hys.classcord.message.entity.Message;
 import com.hys.classcord.message.service.MessageService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.security.Principal;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ public class ChatWebSocketController {
 
     private final MessageService messageService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final MeterRegistry meterRegistry;
 
     /**
      * 處理前端發送的實時聊天訊息，並廣播給該班級內的所有成員 前端發送目的地：/app/servers/{serverId}/chat
@@ -35,6 +38,7 @@ public class ChatWebSocketController {
             return;
         }
 
+        Timer.Sample sample = Timer.start(meterRegistry);
         try {
             // 從 Principal (在 WebSocketConfig 中綁定) 獲取使用者 ID
             UUID userId = UUID.fromString(principal.getName());
@@ -68,9 +72,13 @@ public class ChatWebSocketController {
             messagingTemplate.convertAndSend(
                     "/topic/servers/" + actualServerId + "/messages", response);
 
+            meterRegistry.counter("chat.message.sent", "outcome", "success").increment();
+            sample.stop(meterRegistry.timer("chat.message.broadcast"));
+
         } catch (Exception e) {
             // todo 發送失敗回傳訊息
             log.error("處理實時聊天訊息發生錯誤：", e);
+            meterRegistry.counter("chat.message.sent", "outcome", "error").increment();
         }
     }
 }
