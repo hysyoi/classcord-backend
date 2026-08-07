@@ -178,5 +178,5 @@ sequenceDiagram
 
 <br />
 
-## 📎 預覽 (Preview)
+## 📎 部分功能預覽 (Preview)
 [預覽影片](https://github.com/user-attachments/assets/73396abe-6b14-4c0d-80cd-74e021412652)
