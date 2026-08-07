@@ -29,13 +29,12 @@ public class AiUsageMetrics {
 
     private final AtomicReference<AiLimitStatusResponse> latest = new AtomicReference<>();
 
+    /**
+     * 刻意不在這裡同步呼叫一次 refresh()：@Scheduled 排程在容器就緒後會自動立刻觸發第一次執行， 不需要額外手動刷新；同步呼叫反而會讓這個方法在啟動階段直接等待 Redis
+     * 回應， 若網路延遲或逾時就會拖慢、甚至卡住整個服務啟動。啟動到排程第一次執行前的極短空窗期， latest 會是 null，由下方 Gauge 的空值防呆頂著即可。
+     */
     @PostConstruct
     void registerMetrics() {
-        // 啟動當下若 Redis 還沒就緒導致這裡拋例外，會讓整個 Bean 初始化失敗、拖垮服務啟動，
-        // 所以第一次刷新失敗只記錄警告、放行讓服務照常啟動，latest 保持 null，
-        // 由下方 Gauge 的空值防呆頂著，等下一次排程刷新自然補上真實數據
-        refresh();
-
         Gauge.builder("ai.usage.chat.calls", latest, ref -> valueOrZero(ref, s -> s.chatCount()))
                 .description("今日全站 AI 對話累計呼叫次數")
                 .register(meterRegistry);
