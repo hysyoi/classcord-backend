@@ -28,7 +28,9 @@ jobs:
 
       # 步驟 3：複製測試設定檔範本（解決 gitignore 的問題）
       - name: Copy Test Configuration
-        run: cp classcord-main-service/src/test/resources/application-test.yml.example classcord-main-service/src/test/resources/application-test.yml
+        run: |
+          cp classcord-main-service/src/test/resources/application-test.yml.example classcord-main-service/src/test/resources/application-test.yml
+          cp classcord-ai-service/src/test/resources/application-test.yml.example classcord-ai-service/src/test/resources/application-test.yml
 
       # 步驟 4：啟動資料庫與 Redis 容器
       - name: Start Databases via Docker Compose

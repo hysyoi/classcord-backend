@@ -30,6 +30,13 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+  # 正式環境的資料庫 schema 完全依賴 main-service 的 Flyway 管理，這裡明確關閉。
+  # pom.xml 裡加了 flyway-core 依賴後，Spring Boot 預設會自動把 Flyway 打開，
+  # 所以這裡必須明確寫 false，不能只是不寫（不寫等於預設開啟，行為會跟正式環境原本的樣子不一樣）。
+  # 只有 application-test.yml 會打開它，唯一目的是讓 ai-service 的測試能不依賴 main-service 獨立跑。
+  flyway:
+    enabled: false
+
   threads:
     virtual:
       enabled: true # 開啟 Spring Boot 的虛擬執行緒支持
