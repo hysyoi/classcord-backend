@@ -234,30 +234,38 @@ public class MaterialService {
         // 更新班級已用容量
         server.setUsedStorage(server.getUsedStorage() + fileSize);
 
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        // 只有資料庫 Commit 成功後，這裡才會被觸發！
-
-                        // 安全更新全站計數器 (Redis 累加，僅在 Key 存在時執行)
-                        redisTemplate.execute(
-                                safeIncrScript,
-                                Collections.singletonList("QUOTA:SYSTEM:USED"),
-                                String.valueOf(fileSize));
-
-                        // 手動清除 Redis 憑證
-                        redisTemplate.delete(ticketKey);
-
-                        // 4. 發送非同步搬移訊息給 RabbitMQ
-                        rabbitTemplate.convertAndSend(
-                                RabbitMQConfig.MATERIAL_EXCHANGE,
-                                RabbitMQConfig.ROUTING_KEY_MOVE,
-                                new MaterialMoveEvent(request.fileKey(), newFileKey));
-                    }
-                });
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            // 只有資料庫 Commit 成功後，這裡才會被觸發！
+                            finalizeMaterialUpload(ticketKey, fileSize, request, newFileKey);
+                        }
+                    });
+        } else {
+            finalizeMaterialUpload(ticketKey, fileSize, request, newFileKey);
+        }
 
         return savedMaterial;
+    }
+
+    private void finalizeMaterialUpload(
+            String ticketKey, long fileSize, CreateMaterialRequest request, String newFileKey) {
+        // 安全更新全站計數器 (Redis 累加，僅在 Key 存在時執行)
+        redisTemplate.execute(
+                safeIncrScript,
+                Collections.singletonList("QUOTA:SYSTEM:USED"),
+                String.valueOf(fileSize));
+
+        // 手動清除 Redis 憑證
+        redisTemplate.delete(ticketKey);
+
+        // 發送非同步搬移訊息給 RabbitMQ
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.MATERIAL_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_MOVE,
+                new MaterialMoveEvent(request.fileKey(), newFileKey));
     }
 
     /** 3. 獲取帶有臨時下載網址的教材詳情 */
@@ -345,26 +353,33 @@ public class MaterialService {
         // 軟刪除訊息貼文
         messageRepository.delete(message);
 
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        // 只有資料庫 Commit 成功後，這裡才會被觸發！
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            // 只有資料庫 Commit 成功後，這裡才會被觸發！
+                            finalizeMaterialDeletion(material);
+                        }
+                    });
+        } else {
+            finalizeMaterialDeletion(material);
+        }
+    }
 
-                        // 安全扣減全站計數器 (Redis 累減，僅在 Key 存在時執行)
-                        redisTemplate.execute(
-                                safeDecrScript,
-                                Collections.singletonList("QUOTA:SYSTEM:USED"),
-                                String.valueOf(material.getFileSize()));
+    private void finalizeMaterialDeletion(Material material) {
+        // 安全扣減全站計數器 (Redis 累減，僅在 Key 存在時執行)
+        redisTemplate.execute(
+                safeDecrScript,
+                Collections.singletonList("QUOTA:SYSTEM:USED"),
+                String.valueOf(material.getFileSize()));
 
-                        // 發送非同步刪除訊息給 RabbitMQ (解耦 B2 網路刪除)
-                        String fileKey = storageService.extractFileKey(material.getFileUrl());
-                        rabbitTemplate.convertAndSend(
-                                RabbitMQConfig.MATERIAL_EXCHANGE,
-                                RabbitMQConfig.ROUTING_KEY_DELETE,
-                                new MaterialDeleteEvent(fileKey));
-                    }
-                });
+        // 發送非同步刪除訊息給 RabbitMQ (解耦 B2 網路刪除)
+        String fileKey = storageService.extractFileKey(material.getFileUrl());
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.MATERIAL_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_DELETE,
+                new MaterialDeleteEvent(fileKey));
     }
 
     /* 私有輔助方法 */

@@ -70,13 +70,8 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // 清理 Redis 鍵
-        var keys = redisTemplate.keys("doubt_analysis:*");
-        if (keys != null && !keys.isEmpty()) {
-            redisTemplate.delete(keys);
-        }
-
-        // 清理資料庫以防干擾
+        // 清理資料庫以防干擾（QuizJobManager 用 REQUIRES_NEW 開新交易寫入，
+        // 不受測試的 @Transactional rollback 保護，需手動清除）
         quizQuestionRepository.deleteAll();
         quizRepository.deleteAll();
         materialQuestionRepository.deleteAll();
@@ -133,6 +128,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                         .build());
     }
 
+    // 教師發起 AI 出題，應非同步回傳 PENDING 狀態，題目生成後可查詢到題庫內容
     @Test
     void testGenerateQuestions_Success() throws Exception {
         // 1. 教師發起出題 (預期異步返回 PENDING 狀態與 jobId)
@@ -189,6 +185,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
         assertEquals(3, count);
     }
 
+    // 學生沒有出題權限，發起出題應被拒絕
     @Test
     void testGenerateQuestions_InsufficientPermission() throws Exception {
         // 學生嘗試發起出題，預期 403 Forbidden
@@ -199,6 +196,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    // 題庫已接近上限時再出題，超過總量上限應被擋下
     @Test
     void testGenerateQuestions_QuotaExceeded() throws Exception {
         // 手動塞入 48 題
@@ -221,6 +219,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
+    // 學生完整跑一輪測驗：抽題（不洩漏正確答案）➔ 提交 ➔ 擋重複提交 ➔ 查詢作答報告
     @Test
     void testStudentQuizLifecycle_Success() throws Exception {
         // 1. 先為教材建立 10 題可用考題
@@ -298,6 +297,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.score").value(80));
     }
 
+    // 教師可查詢班級錯題率分析，學生則應被拒絕查詢
     @Test
     void testGetClassWrongQuestionAnalysis_Success() throws Exception {
         // 1. 建立 10 個考題以滿足題庫最少數量限制
@@ -364,6 +364,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    // 教師觸發 AI 疑問分析可取得結果，學生查詢則應被拒絕
     @Test
     void testGetClassDoubtAnalysis_Success() throws Exception {
         ClassDoubtResponse mockResponse =
@@ -394,6 +395,7 @@ public class QuizIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    // AI 疑問分析的 Redis 快取、24 小時限流、併發鎖定機制是否如預期運作
     @Test
     void testGetClassDoubtAnalysis_RedisLockAndRateLimit() throws Exception {
         ClassDoubtResponse mockResponse =

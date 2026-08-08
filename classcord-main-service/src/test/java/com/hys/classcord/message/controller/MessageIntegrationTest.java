@@ -1,5 +1,6 @@
 package com.hys.classcord.message.controller;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -21,6 +22,7 @@ import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +60,7 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        tearDown();
+        truncateAll();
         // 1. 初始化使用者。teacher 與 outsider 只在 setUp 中用於建置環境，故設為局部變數
         User teacher =
                 userRepository.save(
@@ -118,20 +120,17 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
                                 .build());
     }
 
-    @Test
-    void testMessagePermissionsAndLifecycle() throws Exception {
-        // ==========================================
-        // 1. 發送訊息權限測試
-        // ==========================================
-
-        // 1.1 學生在一般頻道發送訊息 ➔ 成功 (201 Created)
-        CreateMessageRequest req1 = new CreateMessageRequest("Hello Class!");
+    // 發送訊息並等待非同步落庫完成，回傳訊息 ID，供需要「訊息已確實存在」的測試重用
+    private UUID postMessageAndAwaitPersisted(UUID channelId, String token, String content)
+            throws Exception {
         String resJson =
                 mockMvc.perform(
-                                post("/v1/channels/" + generalChannel.getId() + "/messages")
-                                        .header("Authorization", studentToken)
+                                post("/v1/channels/" + channelId + "/messages")
+                                        .header("Authorization", token)
                                         .contentType(MediaType.APPLICATION_JSON)
-                                        .content(objectMapper.writeValueAsString(req1)))
+                                        .content(
+                                                objectMapper.writeValueAsString(
+                                                        new CreateMessageRequest(content))))
                         .andExpect(status().isCreated())
                         .andReturn()
                         .getResponse()
@@ -140,32 +139,43 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
         UUID messageId = UUID.fromString(objectMapper.readTree(resJson).get("id").asText());
         assertNotNull(messageId);
 
-        // 等待非同步落庫完成
-        long limit = System.currentTimeMillis() + 8000;
-        while (!messageRepository.existsById(messageId)) {
-            if (System.currentTimeMillis() > limit) {
-                throw new AssertionError("訊息在限時內未被非同步存儲: " + messageId);
-            }
-            Thread.sleep(50);
-        }
+        await().atMost(Duration.ofSeconds(8))
+                .pollInterval(Duration.ofMillis(50))
+                .until(() -> messageRepository.existsById(messageId));
+        return messageId;
+    }
 
-        // 1.2 學生在教材頻道發言 ➔ 失敗 (403 Forbidden)
+    // 學生在一般頻道發送訊息 ➔ 應該成功
+    @Test
+    void testStudentPost_AllowedInGeneralChannel() throws Exception {
+        UUID messageId =
+                postMessageAndAwaitPersisted(generalChannel.getId(), studentToken, "Hello Class!");
+        assertTrue(messageRepository.existsById(messageId));
+    }
+
+    // 學生在教材頻道、管理員頻道發送訊息 ➔ 應該都被拒絕
+    @Test
+    void testStudentPost_ForbiddenInMaterialAndAdminChannel() throws Exception {
+        CreateMessageRequest req = new CreateMessageRequest("Hello Class!");
+
         mockMvc.perform(
                         post("/v1/channels/" + materialChannel.getId() + "/messages")
                                 .header("Authorization", studentToken)
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(req1)))
+                                .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden());
 
-        // 1.3 學生在管理員頻道發言 ➔ 失敗 (403 Forbidden)
         mockMvc.perform(
                         post("/v1/channels/" + adminChannel.getId() + "/messages")
                                 .header("Authorization", studentToken)
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(req1)))
+                                .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden());
+    }
 
-        // 1.4 教師在教材與管理員頻道發言 ➔ 成功 (201 Created)
+    // 老師在教材頻道、管理員頻道發送訊息 ➔ 應該都成功
+    @Test
+    void testTeacherPost_AllowedInMaterialAndAdminChannel() throws Exception {
         mockMvc.perform(
                         post("/v1/channels/" + materialChannel.getId() + "/messages")
                                 .header("Authorization", teacherToken)
@@ -183,34 +193,42 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
                                         objectMapper.writeValueAsString(
                                                 new CreateMessageRequest("Teacher talk"))))
                 .andExpect(status().isCreated());
+    }
 
-        // ==========================================
-        // 2. 獲取訊息列表與隱私測試
-        // ==========================================
-
-        // 2.1 學生讀取一般頻道歷史訊息 ➔ 成功 (200 OK)
+    // 學生讀取一般頻道的歷史訊息 ➔ 應該成功
+    @Test
+    void testStudentRead_GeneralChannelMessages_Allowed() throws Exception {
         mockMvc.perform(
                         get("/v1/channels/" + generalChannel.getId() + "/messages")
                                 .header("Authorization", studentToken))
                 .andExpect(status().isOk());
+    }
 
-        // 2.2 學生讀取管理員頻道歷史訊息 ➔ 失敗 (403 Forbidden)
+    // 學生讀取管理員頻道的歷史訊息 ➔ 應該被拒絕
+    @Test
+    void testStudentRead_AdminChannelMessages_Forbidden() throws Exception {
         mockMvc.perform(
                         get("/v1/channels/" + adminChannel.getId() + "/messages")
                                 .header("Authorization", studentToken))
                 .andExpect(status().isForbidden());
+    }
 
-        // 2.3 局外人讀取伺服器頻道訊息 ➔ 失敗 (403 Forbidden)
+    // 非班級成員的局外人讀取頻道訊息 ➔ 應該被拒絕
+    @Test
+    void testOutsiderRead_ChannelMessages_Forbidden() throws Exception {
         mockMvc.perform(
                         get("/v1/channels/" + generalChannel.getId() + "/messages")
                                 .header("Authorization", outsiderToken))
                 .andExpect(status().isForbidden());
+    }
 
-        // ==========================================
-        // 3. 編輯訊息測試
-        // ==========================================
+    // 學生可以編輯自己的訊息，但老師不能代為修改學生的發言內容
+    @Test
+    void testEditMessage_OwnerCanEditButOthersCannot() throws Exception {
+        UUID messageId =
+                postMessageAndAwaitPersisted(generalChannel.getId(), studentToken, "Hello Class!");
 
-        // 3.1 學生編輯自己的訊息 ➔ 成功 (204 No Content)
+        // 學生編輯自己的訊息 ➔ 成功 (204 No Content)
         UpdateMessageRequest updateReq = new UpdateMessageRequest("Hello Class! (edited)");
         mockMvc.perform(
                         put("/v1/messages/" + messageId)
@@ -225,19 +243,19 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
                         .orElseThrow(() -> new AssertionError("找不到訊息"));
         assertEquals("Hello Class! (edited)", updatedMessage.getContent());
 
-        // 3.2 老師編輯學生的訊息 ➔ 失敗 (403 Forbidden - 老師無權修改他人發言內容)
+        // 老師編輯學生的訊息 ➔ 失敗 (403 Forbidden - 老師無權修改他人發言內容)
         mockMvc.perform(
                         put("/v1/messages/" + messageId)
                                 .header("Authorization", teacherToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(updateReq)))
                 .andExpect(status().isForbidden());
+    }
 
-        // ==========================================
-        // 4. 軟刪除訊息測試
-        // ==========================================
-
-        // 建立另一條學生訊息用來做刪除測試
+    // 刪除訊息的權限與軟刪除行為：局外人不能刪、老師可代管理員刪學生訊息、學生可刪自己的訊息，
+    // 且刪除後資料庫紀錄仍在（只是標記為已刪除），不是真的整筆消失
+    @Test
+    void testDeleteMessage_SoftDeleteAndPermissions() throws Exception {
         Message studentMsg =
                 messageRepository.save(
                         Message.builder()
@@ -246,13 +264,13 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
                                 .content("Temp message")
                                 .build());
 
-        // 4.1 局外人嘗試刪除 ➔ 失敗 (403 Forbidden)
+        // 局外人嘗試刪除 ➔ 失敗 (403 Forbidden)
         mockMvc.perform(
                         delete("/v1/messages/" + studentMsg.getId())
                                 .header("Authorization", outsiderToken))
                 .andExpect(status().isForbidden());
 
-        // 4.2 老師刪除學生的訊息 (管理員刪除) ➔ 成功 (204 No Content)
+        // 老師刪除學生的訊息 (管理員刪除) ➔ 成功 (204 No Content)
         mockMvc.perform(
                         delete("/v1/messages/" + studentMsg.getId())
                                 .header("Authorization", teacherToken))
@@ -269,22 +287,35 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
                         studentMsg.getId());
         assertTrue(studentMsgDeleted, "資料庫中的 deleted 欄位應被置為 true");
 
-        // 4.3 學生刪除自己的原創訊息 ➔ 成功 (204 No Content)
-        mockMvc.perform(delete("/v1/messages/" + messageId).header("Authorization", studentToken))
+        // 學生刪除自己的原創訊息 ➔ 成功 (204 No Content)
+        UUID ownMessageId =
+                postMessageAndAwaitPersisted(
+                        generalChannel.getId(), studentToken, "My own message");
+
+        mockMvc.perform(
+                        delete("/v1/messages/" + ownMessageId)
+                                .header("Authorization", studentToken))
                 .andExpect(status().isNoContent());
 
         // 驗證 A: JPA 查不到
-        assertFalse(messageRepository.existsById(messageId));
+        assertFalse(messageRepository.existsById(ownMessageId));
 
         // 驗證 B: 資料庫物理數據依然存在，deleted 被更新為 true
         Boolean originalMsgDeleted =
                 jdbcTemplate.queryForObject(
-                        "SELECT deleted FROM messages WHERE id = ?", Boolean.class, messageId);
+                        "SELECT deleted FROM messages WHERE id = ?", Boolean.class, ownMessageId);
         assertTrue(originalMsgDeleted);
     }
 
     @AfterEach
     void tearDown() {
+        truncateAll();
+    }
+
+    // 本測試類別停用了 @Transactional，訊息是非同步落庫，交易假回滾看不到背景 consumer thread 寫入的資料，
+    // 只能用真的 TRUNCATE 清乾淨。有 CASCADE，任何外鍵參照到這裡列出的表的其他表（例如未來新增的表）
+    // 也會被自動連帶清空，不需要每次新增表都手動加進這份清單。
+    private void truncateAll() {
         jdbcTemplate.execute(
                 "TRUNCATE TABLE messages, channels, server_members, servers, users, materials, user_identities, material_questions, quizzes, quiz_questions, quiz_generation_jobs CASCADE");
     }

@@ -56,10 +56,9 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
         studentToken = "Bearer " + jwtUtils.generateToken(student.getId(), student.getEmail());
     }
 
-    @Test
-    void testServerLifecycle() throws Exception {
-        // 1. 建立伺服器
-        CreateServerRequest createReq = new CreateServerRequest("Java Programming");
+    // 以老師身分建立一個伺服器，回傳伺服器 ID，供需要「已存在伺服器」的測試重用
+    private UUID createServer(String name) throws Exception {
+        CreateServerRequest createReq = new CreateServerRequest(name);
         String resJson =
                 mockMvc.perform(
                                 post("/v1/servers")
@@ -70,8 +69,13 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
                         .andReturn()
                         .getResponse()
                         .getContentAsString();
+        return UUID.fromString(objectMapper.readTree(resJson).get("id").asText());
+    }
 
-        UUID serverId = UUID.fromString(objectMapper.readTree(resJson).get("id").asText());
+    // 建立伺服器後，建立者應自動成為 TEACHER，並自動產生預設的三個頻道
+    @Test
+    void testCreateServer_SetsCreatorAsTeacherAndCreatesDefaultChannels() throws Exception {
+        UUID serverId = createServer("Java Programming");
 
         // 驗證建立者為 TEACHER 角色
         ServerMember ownerMember =
@@ -93,8 +97,14 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
                 com.hys.classcord.channel.enums.ChannelType.MATERIAL, channels.get(1).getType());
         assertEquals("管理頻道", channels.get(2).getName());
         assertEquals(com.hys.classcord.channel.enums.ChannelType.ADMIN, channels.get(2).getType());
+    }
 
-        // 2. 更改名稱 (學生改 ➔ 403 Forbidden)
+    // 只有老師能修改伺服器名稱，學生嘗試修改應被拒絕
+    @Test
+    void testUpdateServer_OnlyTeacherAllowed() throws Exception {
+        UUID serverId = createServer("Java Programming");
+
+        // 更改名稱 (學生改 ➔ 403 Forbidden)
         UpdateServerRequest updateReq = new UpdateServerRequest("New Name");
         mockMvc.perform(
                         put("/v1/servers/" + serverId)
@@ -102,8 +112,13 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(updateReq)))
                 .andExpect(status().isForbidden());
+    }
 
-        // 3. 加入伺服器 (學生加入 ➔ 成為 STUDENT)
+    // 加入伺服器後應自動被賦予 STUDENT 角色
+    @Test
+    void testJoinServer_AssignsStudentRole() throws Exception {
+        UUID serverId = createServer("Java Programming");
+
         mockMvc.perform(
                         post("/v1/servers/" + serverId + "/join")
                                 .header("Authorization", studentToken))
@@ -115,8 +130,19 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
                         .orElse(null);
         assertNotNull(studentMember);
         assertEquals(ServerRole.STUDENT, studentMember.getRole());
+    }
 
-        // 4. 退出伺服器 (學生退出 ➔ 成功)
+    // 學生可以自由退出伺服器，但擁有者（老師）不能退出自己建立的伺服器
+    @Test
+    void testLeaveServer_StudentCanLeaveButOwnerCannot() throws Exception {
+        UUID serverId = createServer("Java Programming");
+
+        mockMvc.perform(
+                        post("/v1/servers/" + serverId + "/join")
+                                .header("Authorization", studentToken))
+                .andExpect(status().isCreated());
+
+        // 學生退出 ➔ 成功
         mockMvc.perform(
                         post("/v1/servers/" + serverId + "/leave")
                                 .header("Authorization", studentToken))
@@ -129,6 +155,7 @@ public class ServerIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // 每位老師最多只能建立 10 個伺服器，第 11 個應該被擋下
     @Test
     void testCreateServerLimit() throws Exception {
         // 建立 10 個伺服器

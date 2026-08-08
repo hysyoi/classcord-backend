@@ -1,0 +1,73 @@
+spring:
+  cloud:
+    nacos:
+      config:
+        enabled: false
+        import-check:
+          enabled: false
+      discovery:
+        enabled: false
+
+  # 跟 main-service 共用同一個測試資料庫 classcord_test，但 ai-service 有自己的 Flyway
+  # migration（見 db/migration/V1__init.sql）跟獨立的 history 表名，不依賴 main-service 先跑過。
+  # 這裡的 Flyway 只在測試環境開啟，正式環境的 application.yml 是明確關閉的。
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    table: flyway_schema_history_ai
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/classcord_test}
+    driver-class-name: org.postgresql.Driver
+    username: admin
+    password: password
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+  # 2. Redis 連線資訊
+  data:
+    redis:
+      host: localhost
+      port: 6380
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /test
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3         # 最多重試 3 次
+          initial-interval: 10ms
+          multiplier: 1.0
+
+  # 3. 測試專用的 Spring AI Mock 設定，避開 API Key 未填錯誤（測試不會真的呼叫 Gemini）
+  ai:
+    openai:
+      api-key: mock-gemini-key-for-testing
+
+# 測試環境不啟用 Seata，避免需要真的 Seata TC Server 與 undo_log 表
+seata:
+  enabled: false
+
+# 測試專用的密鑰與 URL 設定
+app:
+  jwt:
+    secret-key: mock_secret_key_which_must_be_at_least_32_bytes_long_for_hs256_algorithm
+    expiration-ms: 3600000 # 1小時
+  urls:
+    backend: http://localhost:8080
+    frontend: http://localhost:3000
+  storage:
+    endpoint: https://mock-s3-endpoint.com
+    access-key: mock-access-key
+    secret-key: mock-secret-key
+    bucket-name: mock-bucket
+    public-url: https://mock-public-url.com
+  cors:
+    allowed-origins: "http://localhost:3000"
