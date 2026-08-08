@@ -1,11 +1,15 @@
 package com.hys.classcord.auth.service.oauth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.hys.classcord.auth.dto.OAuthUserInfoDto;
 import com.hys.classcord.auth.exception.AuthException;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,15 +20,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.client.RestClient;
 
-// 純單元測試：不真的打 Google API。
-// 注意：GoogleAuthStrategy 內部的 GoogleIdTokenVerifier 是建構子內部 new 出來的，不是注入進來的依賴，
-// 沒辦法用 Mockito mock 掉，所以「id_token 驗證成功」這條happy path 沒辦法在不改動正式程式碼的前提下測到。
-// 這裡改用一個真實但格式錯誤的字串當 id_token，讓真正的 GoogleIdTokenVerifier 自然解析失敗，
-// 藉此驗證「Token 驗證失敗時有沒有被正確包裝成 AuthException」這條錯誤處理邏輯。
 @ExtendWith(MockitoExtension.class)
 class GoogleAuthStrategyTest {
 
     @Mock private RestClient restClient;
+    @Mock private GoogleIdTokenVerifier verifier;
 
     private GoogleAuthStrategy googleAuthStrategy;
 
@@ -32,6 +32,7 @@ class GoogleAuthStrategyTest {
     void setUp() {
         googleAuthStrategy =
                 new GoogleAuthStrategy(
+                        verifier,
                         "mock-client-id",
                         "mock-client-secret",
                         "http://localhost:3000",
@@ -79,5 +80,30 @@ class GoogleAuthStrategyTest {
 
         assertThatThrownBy(() -> googleAuthStrategy.verifyAndExtractInfo("auth-code"))
                 .isInstanceOf(AuthException.class);
+    }
+
+    // id_token 驗證通過時，應該正確從 Payload 解析出使用者資訊
+    @Test
+    void verifyAndExtractInfo_returnsUserInfo_whenIdTokenIsValid() throws Exception {
+        stubTokenExchange(Map.of("id_token", "valid-id-token"));
+
+        GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
+        payload.setSubject("google-user-123");
+        payload.setEmail("student@gmail.com");
+        payload.setEmailVerified(true);
+        payload.set("name", "Test Student");
+        payload.set("picture", "https://example.com/avatar.png");
+
+        GoogleIdToken idToken = mock(GoogleIdToken.class);
+        when(idToken.getPayload()).thenReturn(payload);
+        when(verifier.verify("valid-id-token")).thenReturn(idToken);
+
+        OAuthUserInfoDto result = googleAuthStrategy.verifyAndExtractInfo("auth-code");
+
+        assertThat(result.providerUserId()).isEqualTo("google-user-123");
+        assertThat(result.email()).isEqualTo("student@gmail.com");
+        assertThat(result.username()).isEqualTo("Test Student");
+        assertThat(result.avatarUrl()).isEqualTo("https://example.com/avatar.png");
+        assertThat(result.isEmailVerified()).isTrue();
     }
 }

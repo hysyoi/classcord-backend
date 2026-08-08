@@ -2,13 +2,10 @@ package com.hys.classcord.auth.service.oauth;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
-import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.gson.GsonFactory;
 import com.hys.classcord.auth.dto.OAuthUserInfoDto;
 import com.hys.classcord.auth.enums.AuthErrorCode;
 import com.hys.classcord.auth.enums.AuthProvider;
 import com.hys.classcord.auth.exception.AuthException;
-import java.util.Collections;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -27,6 +24,7 @@ public class GoogleAuthStrategy implements OAuth2Strategy {
     private final RestClient restClient;
 
     public GoogleAuthStrategy(
+            GoogleIdTokenVerifier verifier,
             @Value(
                             "${spring.security.oauth2.client.registration.google.client-id:mock-google-client-id}")
                     String googleClientId,
@@ -35,14 +33,11 @@ public class GoogleAuthStrategy implements OAuth2Strategy {
                     String googleClientSecret,
             @Value("${app.urls.frontend}") String frontendUrl,
             RestClient restClient) {
+        this.verifier = verifier;
         this.clientId = googleClientId;
         this.clientSecret = googleClientSecret;
         this.frontendUrl = frontendUrl;
         this.restClient = restClient;
-        this.verifier =
-                new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
-                        .setAudience(Collections.singletonList(googleClientId))
-                        .build();
     }
 
     @Override

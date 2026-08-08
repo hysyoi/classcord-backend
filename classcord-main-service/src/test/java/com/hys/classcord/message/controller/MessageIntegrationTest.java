@@ -1,5 +1,6 @@
 package com.hys.classcord.message.controller;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -21,6 +22,7 @@ import com.hys.classcord.server.entity.ServerMember;
 import com.hys.classcord.server.enums.ServerRole;
 import com.hys.classcord.server.repository.ServerMemberRepository;
 import com.hys.classcord.server.repository.ServerRepository;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -137,13 +139,9 @@ public class MessageIntegrationTest extends BaseIntegrationTest {
         UUID messageId = UUID.fromString(objectMapper.readTree(resJson).get("id").asText());
         assertNotNull(messageId);
 
-        long limit = System.currentTimeMillis() + 8000;
-        while (!messageRepository.existsById(messageId)) {
-            if (System.currentTimeMillis() > limit) {
-                throw new AssertionError("訊息在限時內未被非同步存儲: " + messageId);
-            }
-            Thread.sleep(50);
-        }
+        await().atMost(Duration.ofSeconds(8))
+                .pollInterval(Duration.ofMillis(50))
+                .until(() -> messageRepository.existsById(messageId));
         return messageId;
     }
 
