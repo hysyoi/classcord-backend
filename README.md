@@ -30,6 +30,7 @@
 - `Spring AI`
 - `Spring Security`
 - `Spring Boot 3`
+- `JUnit & Mockito`
 - `RabbitMQ`
 - `Redis`
 - `Postgres, Pgvector`
@@ -38,6 +39,7 @@
 - `Backblaze B2`
 - `Flyway`
 - `Kubernetes (K3s)`
+- `Prometheus & Grafana`
 
 <br />
 
