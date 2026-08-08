@@ -50,7 +50,6 @@
 - ✨ **教材專屬 AI 助教**：針對每份教材建立 RAG 知識索引，提供即時問答
 - 📊 **全班正確率統計**：AI 自動出題、批改，彙整班級錯題率與選項分佈，掌握全班學習盲點
 - 💡 **學生疑問焦點報告**：AI 分析全班提問紀錄，過濾閒聊並歸納疑惑主題與教學建議
-- 🏛️ **微服務架構**：Gateway + Main Service + AI Service
 
 <br />
 
@@ -66,14 +65,10 @@ flowchart TB
     subgraph APP["應用服務層"]
         direction LR
         Main["Main Service :8081<br/>Auth · Server/Channel<br/>Message · Presence<br/>Quiz · Material"]
-        AI["AI Service :8082<br/>RAG Indexing<br/>AI Chat · Doubt Analysis"]
+        AI["AI Service :8082<br/>RAG Indexing · AI Chat · Doubt Analysis"]
     end
 
-    subgraph MQL["非同步佇列（各服務內部解耦）"]
-        direction LR
-        MainMQ{{"RabbitMQ<br/>訊息落地 · 檔案搬移"}}
-        AIMQ{{"RabbitMQ<br/>RAG 索引處理"}}
-    end
+    MQ{{"RabbitMQ<br/>訊息落地 · 檔案搬移 · RAG 索引處理"}}
 
     subgraph GOV["服務治理 (Spring Cloud)"]
         direction LR
@@ -85,7 +80,7 @@ flowchart TB
     subgraph DATA["資料層"]
         direction LR
         PG[("PostgreSQL<br/>+ pgvector")]
-        Redis[("Redis<br/>Cache / Presence")]
+        Redis[("Redis<br/>快取 / 上線狀態")]
         B2[("Backblaze B2<br/>教材原始檔")]
     end
 
@@ -97,8 +92,8 @@ flowchart TB
     Main -- "出題任務 (RabbitMQ)" --> AI
     AI -- "教材狀態回報 / 出題結果 (Feign)" --> Main
 
-    Main -.-> MainMQ -.-> Main
-    AI -.-> AIMQ -.-> AI
+    Main -.-> MQ -.-> Main
+    AI -.-> MQ -.-> AI
 
     Main --> PG
     Main --> Redis
@@ -107,12 +102,10 @@ flowchart TB
     AI --> Redis
     AI --> B2
 
-    Nacos -.->|服務發現| Gateway
-    Nacos -.->|服務發現| Main
-    Nacos -.->|服務發現| AI
-    Sentinel -.->|限流熔斷| Gateway
-    Seata -.->|全局事務| Main
-    Seata -.->|全局事務| AI
+    Nacos -.->|服務發現| GW
+    Nacos -.->|服務發現| APP
+    Sentinel -.->|限流熔斷| GW
+    Seata -.->|全局事務| APP
 ```
 ### 核心流程：教材啟用 AI 助教（RAG 向量化）
 ```mermaid
@@ -160,7 +153,7 @@ sequenceDiagram
 
 專案最初以單體架構起手，把「即時社群互動 ＋ AI 學習」的想法逐步實作出來。
 
-隨著 AI 助教功能加入，問題也浮現：AI 服務的資源消耗（向量化、LLM 呼叫）遠高於其他模組，若和主要業務邏輯綁在同一個服務裡，耦合度太高；而且一旦 AI 服務掛掉，會直接拖垮整個網站其他功能。這讓我決定把 AI 服務獨立拆分出來。
+隨著 AI 助教功能加入，我意識到文件解析與向量化這類操作本質上高耗能，而單一伺服器資源有限，若和核心業務綁在同一個服務裡容易拖垮整體穩定性，因此決定把 AI 服務獨立拆分出來。
 
 - 首先要重新界定 AI 服務的職責邊界，把原本混在單體內的 API 重新切分出去
 - 服務間溝通改用 OpenFeign，需要重新設計呼叫方式與錯誤處理機制
@@ -170,14 +163,24 @@ sequenceDiagram
 
 歷經這次拆分，AI 服務具備了獨立擴展、獨立部署的能力，即使未來 AI 相關運算需求暴增，也能單獨針對該服務做集群化，而不必牽動其他核心功能；同時服務間的故障也被有效隔離，AI 服務即使異常，也不會再影響訊息、頻道等基礎互動功能的正常運作。
 
+雖然服務間溝通從方法呼叫變成網路呼叫，得額外處理逾時、重試與資料最終一致性；本地開發環境也從單一應用變成要協調 RabbitMQ、Nacos、Seata 等多個基礎設施；測試成本也比單體時期高出不少。但考量到 AI 服務未來的擴展需求與故障隔離的必要性，我判斷這個取捨是值得的。
+
 <br />
 
 ## 🚀 如何本地啟動專案 (Running the Project)
+
+**前置需求**：`JDK 21` `Maven` `Docker`
+
 1. Clone 此專案
-2. 設定 `.env`
-3. `docker-compose up -d` 啟動 Postgres / Redis / RabbitMQ / Nacos / Seata 等基礎設施
-4. 啟動 `Gateway`, `Main`, `Ai` 三個 Spring Boot 服務
-5. 瀏覽器打開 `http://localhost:8080/swagger-ui.html` 查看 API
+2. 複製 [`.env.example`](.env.example) 為 `.env`，並依需求填入實際值
+3. `docker-compose up -d` 啟動基礎設施
+4. 啟動三個 Spring Boot 服務：
+   ```
+   # classcord-gateway       port:8080
+   # classcord-main-service  port:8081
+   # classcord-ai-service    port:8082
+   ```
+5. 瀏覽器打開 `http://localhost:8080/swagger-ui.html` 查看聚合後的 API 文件
 
 <br />
 
