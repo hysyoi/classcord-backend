@@ -172,7 +172,7 @@ sequenceDiagram
    # classcord-main-service  port:8081
    # classcord-ai-service    port:8082
    ```
-5. 瀏覽器打開 `http://localhost:8080/swagger-ui.html` 查看聚合後的 API 文件
+5. 瀏覽器打開 `http://localhost:8080/swagger-ui.html` 查看 API 文件
 
 <br />
 
