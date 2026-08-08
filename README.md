@@ -163,8 +163,6 @@ sequenceDiagram
 
 ## 🚀 如何本地啟動專案 (Running the Project)
 
-**前置需求**：`JDK 21` `Maven` `Docker`
-
 1. Clone 此專案
 2. 複製 [`.env.example`](.env.example) 為 `.env`，並依需求填入實際值
 3. `docker-compose up -d` 啟動基礎設施
