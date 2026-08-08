@@ -23,7 +23,7 @@ jobs:
 
       # 步驟 2：執行 PR Agent，並使用該 App Token
       - name: Run PR Agent
-        uses: Codium-ai/pr-agent@main
+        uses: The-PR-Agent/pr-agent@main
         env:
           # 使用 App 產生的 Token 代替預設的 GITHUB_TOKEN
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}

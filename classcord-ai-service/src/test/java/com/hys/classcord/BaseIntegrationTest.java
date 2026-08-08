@@ -26,6 +26,8 @@ public abstract class BaseIntegrationTest {
     // Redis 不在 @Transactional 的 rollback 範圍內，測試結束後手動清空。
     @AfterEach
     void flushRedis() {
-        redisConnectionFactory.getConnection().serverCommands().flushDb();
+        try (var connection = redisConnectionFactory.getConnection()) {
+            connection.serverCommands().flushDb();
+        }
     }
 }

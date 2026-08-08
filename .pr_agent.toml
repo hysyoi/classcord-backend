@@ -2,6 +2,12 @@
 # 強制要求機器人完全使用繁體中文回覆
 response_language = "zh-TW"
 
+# Gemini 3.5 Flash 實際支援 100 萬 token 的 context window，但 PR-Agent 內建的模型對照表
+# 可能還沒收錄這麼新的模型，導致預設退回保守的 32000 token 上限，害大型 PR 審查不完整。
+# 這裡明確告訴它模型的真實上限，讓它能用滿我們自己 Gemini key 實際能負擔的額度。
+custom_model_max_tokens = 1000000
+max_model_tokens = 1000000
+
 [pr_reviewer]
 # 開啟嚴格模式，讓 AI 針對不符合業界標準的地方加大力度審查
 require_score_review = true

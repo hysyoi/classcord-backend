@@ -34,7 +34,9 @@ public abstract class BaseIntegrationTest {
     // redis-test 是專屬測試的獨立容器，flushDb 不會波及其他環境。
     @AfterEach
     void flushRedis() {
-        redisConnectionFactory.getConnection().serverCommands().flushDb();
+        try (var connection = redisConnectionFactory.getConnection()) {
+            connection.serverCommands().flushDb();
+        }
     }
 
     // 測試包在假交易裡，結束時只會 rollback、不會真的 commit，
