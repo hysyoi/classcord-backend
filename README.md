@@ -82,7 +82,7 @@ flowchart TB
     subgraph DATA["資料層"]
         direction LR
         PG[("PostgreSQL<br/>+ pgvector")]
-        Redis[("Redis<br/>快取 / 上線狀態")]
+        Redis[("Redis<br/>快取 / 上線狀態 / 分散式鎖")]
         B2[("Backblaze B2<br/>教材原始檔")]
     end
 
