@@ -23,7 +23,7 @@ jobs:
 
       # 步驟 2：執行 PR Agent，並使用該 App Token
       - name: Run PR Agent
-        uses: Codium-ai/pr-agent@main
+        uses: The-PR-Agent/pr-agent@main
         env:
           # 使用 App 產生的 Token 代替預設的 GITHUB_TOKEN
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
@@ -31,6 +31,8 @@ jobs:
           # Google AI Studio (Gemini) 驗證
           GOOGLE_AI_STUDIO__GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CONFIG__MODEL: "gemini/gemini-3.5-flash"
+
+          CONFIG__MAX_MODEL_TOKENS: "1000000"
 
       # 步驟 3：發送 Discord 通知 (成功與失敗皆會 Tag)
       - name: Send Discord Notification
