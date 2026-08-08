@@ -68,7 +68,9 @@ flowchart TB
         AI["AI Service :8082<br/>RAG Indexing · AI Chat · Doubt Analysis"]
     end
 
-    MQ{{"RabbitMQ<br/>訊息落地 · 檔案搬移 · RAG 索引處理"}}
+    subgraph MQL["非同步佇列層"]
+        MQ{{"RabbitMQ<br/>訊息落地 · 檔案搬移 · 出題任務 · RAG 索引處理"}}
+    end
 
     subgraph GOV["服務治理 (Spring Cloud)"]
         direction LR
@@ -89,23 +91,15 @@ flowchart TB
     Gateway --> AI
 
     Main -- "疑問分析請求 (Feign)" --> AI
-    Main -- "出題任務 (RabbitMQ)" --> AI
     AI -- "教材狀態回報 / 出題結果 (Feign)" --> Main
 
-    Main -.-> MQ -.-> Main
-    AI -.-> MQ -.-> AI
+    Main -.-> MQ
+    MQ -.-> Main
+    AI -.-> MQ
+    MQ -.-> AI
 
-    Main --> PG
-    Main --> Redis
-    Main --> B2
-    AI --> PG
-    AI --> Redis
-    AI --> B2
-
-    Nacos -.->|服務發現| GW
-    Nacos -.->|服務發現| APP
-    Sentinel -.->|限流熔斷| GW
-    Seata -.->|全局事務| APP
+    Main --> PG & Redis & B2
+    AI --> PG & Redis & B2
 ```
 ### 核心流程：教材啟用 AI 助教（RAG 向量化）
 ```mermaid
