@@ -9,7 +9,7 @@
 
 <p align="center">
     <a href="https://classcord.hys-lab.com"><b>網站</b></a> •
-    <a href="https://docs-classcord.hys-lab.com/"><b>技術文件</b></a>
+    <a href="https://docs-classcord.hys-lab.com/#00--亮點摘要"><b>技術文件</b></a>
 </p>
 <br /><br />
 
