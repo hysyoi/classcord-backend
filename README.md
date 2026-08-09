@@ -54,6 +54,15 @@
 <br />
 
 ## 🏛️ 架構 (Architecture)
+
+<br />
+
+<p align="center">
+    <a href="https://s.icepanel.io/IVhqLydKcwcztz/L4xt"><b>➜ 互動式 C4 Model 版</b></a>
+</p>
+
+<br />
+
 ```mermaid
 flowchart TB
     Client(["Web / Mobile Client"])
