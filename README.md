@@ -2,7 +2,7 @@
 
 <p align="center">
 <a href="https://classcord.hys-lab.com">
-  <img src="https://i.ibb.co/4Z9TsNt2/classcord-logo-bg.png" alt="Classcord Logo" width="400">
+  <img src="https://cdn-classcord.hys-lab.com/classcord-logo-bg.png" alt="Classcord Logo" width="400">
 </a>
 </p>
 <p align="center"><b>AI 驅動的社群學習網路應用</b></p>
@@ -13,7 +13,7 @@
 </p>
 <br /><br />
 
-![Classcord 封面圖](https://i.ibb.co/pvQFh7ks/cover-crop-rounded-24.png)
+![Classcord 封面圖](https://cdn-classcord.hys-lab.com/cover-crop-rounded-24.png)
 
 <br />
 
