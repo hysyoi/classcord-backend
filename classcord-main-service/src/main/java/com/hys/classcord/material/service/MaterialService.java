@@ -329,8 +329,7 @@ public class MaterialService {
 
         // 權限檢查：必須是上傳者本人，或者是該班級的 TEACHER/TA
         boolean isAuthor = message.getUser().getId().equals(userId);
-        boolean isTeacherOrTa =
-                member.getRole() == ServerRole.TEACHER || member.getRole() == ServerRole.TA;
+        boolean isTeacherOrTa = member.getRole().canManage();
 
         if (!isAuthor && !isTeacherOrTa) {
             throw new MaterialException(MaterialErrorCode.INSUFFICIENT_PERMISSIONS);

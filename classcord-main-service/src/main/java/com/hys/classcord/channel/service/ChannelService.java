@@ -167,7 +167,7 @@ public class ChannelService {
                                 () -> new ChannelException(ChannelErrorCode.NOT_SERVER_MEMBER));
 
         // 只有老師或者助教才有資格管理頻道
-        if (member.getRole() != ServerRole.TEACHER && member.getRole() != ServerRole.TA) {
+        if (!member.getRole().canManage()) {
             throw new ChannelException(ChannelErrorCode.INSUFFICIENT_PERMISSIONS);
         }
     }

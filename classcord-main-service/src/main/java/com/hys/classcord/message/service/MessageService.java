@@ -208,7 +208,7 @@ public class MessageService {
         // 3. 如果非作者本身，必須是該伺服器的 Teacher 或 TA 角色 (管理員刪除)
         ServerMember member =
                 getAndValidateMembership(message.getChannel().getServer().getId(), userId);
-        if (member.getRole() == ServerRole.TEACHER || member.getRole() == ServerRole.TA) {
+        if (member.getRole().canManage()) {
             cleanUpAndExecuteDelete(message);
         } else {
             throw new MessageException(MessageErrorCode.INSUFFICIENT_PERMISSIONS, "權限不足，無法刪除他人訊息");
