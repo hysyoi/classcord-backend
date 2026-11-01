@@ -49,7 +49,7 @@ public class AuthenticationService {
         // 一律轉成小寫並去空白
         String normalizedEmail = email.toLowerCase().trim();
 
-        // 【第一道防線：60秒防重複發信鎖】
+        // 60 秒防重複發信鎖
         // 建立一個專屬於這個 Email 的鎖 Key
         String rateLimitKey = "AUTH:LOCK:EMAIL:" + normalizedEmail;
 
@@ -60,15 +60,12 @@ public class AuthenticationService {
                         .opsForValue()
                         .setIfAbsent(rateLimitKey, "locked", 60, TimeUnit.SECONDS);
 
-        // 如果 isLockSuccess 為 null 或 false，代表 60 秒內已經發過信了，直接攔截！
+        // 如果 isLockSuccess 為 null 或 false，代表 60 秒內已經發過信了
         if (isLockSuccess == null || !isLockSuccess) {
-            // 丟出自訂的異常，例如：請勿頻繁發送驗證信，或 429 Too Many Requests
             throw new AuthException(AuthErrorCode.TOO_MANY_REQUESTS);
         }
 
-        // 順利拿到鎖，代表這 60 秒他是合法的，繼續往下走原本的邏輯...
-
-        // 【第二道防線：檢查 Email 是否已經在 DB 中存在】
+        // 檢查 Email 是否已經在 DB 中存在
         if (userRepository.existsByEmail(normalizedEmail)) {
             // 如果已註冊過，不向前端拋出異常 (防枚舉)，而是寄送一封「已擁有帳號通知信」
             mailService.sendAuthMail(
@@ -94,7 +91,7 @@ public class AuthenticationService {
 
             String jsonStr = objectMapper.writeValueAsString(pendingUser);
 
-            // 送進萬用驗證中心（效期 24 小時）
+            // 存入驗證 Token（效期 24 小時）
             String token = tokenService.createToken("VERIFY_EMAIL", jsonStr, 1440);
 
             String activateLink =
@@ -114,9 +111,6 @@ public class AuthenticationService {
             log.error("發送註冊驗證信件失敗，Email: {}", normalizedEmail, e);
             // 無論是序列化還是寄信失敗，手動移除 60 秒防刷鎖，避免卡死使用者
             redisTemplate.delete(rateLimitKey);
-            // if (e instanceof AuthException) {
-            //     throw (AuthException) e;
-            // }
             throw new RuntimeException("註冊資料處理或郵件寄送異常", e);
         }
     }
@@ -154,7 +148,7 @@ public class AuthenticationService {
                             .build();
             userIdentityRepository.save(localIdentity);
 
-            log.info("🎉 帳號驗證成功！數據正式落地 DB，歡迎新成員：{}", pendingUser.getUsername());
+            log.info("帳號開通完成：{}", pendingUser.getUsername());
 
             // 4. 使用 TransactionSynchronization 確保 DB 事務確定 Commit 後才銷毀 Redis Token
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -163,7 +157,7 @@ public class AuthenticationService {
                             @Override
                             public void afterCommit() {
                                 tokenService.consume("VERIFY_EMAIL", token);
-                                log.info("【Token 銷毀】帳號開通完成，驗證 Token 已從 Redis 移除");
+                                log.info("帳號開通完成，已移除驗證 Token");
                             }
                         });
             } else {
@@ -182,8 +176,7 @@ public class AuthenticationService {
 
         String normalizedEmail = email.toLowerCase().trim();
 
-        // 【第一道防線：60 秒防刷原子鎖】
-        // 避免惡意黑客利用忘記密碼端點，瘋狂幫某個可憐的使用者炸彈式寄信
+        // 60 秒防重複發信鎖，避免忘記密碼端點被拿來轟炸他人信箱
         String rateLimitKey = "AUTH:LOCK:RESET:" + normalizedEmail;
         Boolean isLockSuccess =
                 redisTemplate
@@ -195,12 +188,12 @@ public class AuthenticationService {
         }
 
         try {
-            // 【第二道防線：檢查真偽】只有真正註冊過的使用者才能重設密碼
+            // 只有已註冊的使用者才會收到重設信
             Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
 
             if (userOpt.isPresent()) {
                 // 這裡不需要包成 DTO，因為重設密碼時，我們只需要在 Redis 記住「是哪一個 Email 發起重設的」即可
-                // 呼叫你的萬用驗證中心，產生用途為 "RESET_PASSWORD" 的 Token，時效給 15 分鐘
+                // 產生用途為 "RESET_PASSWORD" 的 Token，效期 15 分鐘
                 String token = tokenService.createToken("RESET_PASSWORD", normalizedEmail, 15);
 
                 // 指向前端密碼重設路由
@@ -254,16 +247,16 @@ public class AuthenticationService {
         // 5. 儲存變更
         userIdentityRepository.save(localIdentity);
 
-        log.info("🎉 使用者 {} 的密碼已順利重設成功！", user.getUsername());
+        log.info("使用者 {} 已重設密碼", user.getUsername());
 
-        // 6. 在 DB 事務 100% Commit 後才銷毀 Token
+        // 6. 在 DB 交易 Commit 後才銷毀 Token
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
                             tokenService.consume("RESET_PASSWORD", token);
-                            log.info("【Token 銷毀】密碼重設完成，驗證 Token 已從 Redis 移除");
+                            log.info("密碼重設完成，已移除重設 Token");
                         }
                     });
         } else {
@@ -271,38 +264,7 @@ public class AuthenticationService {
         }
     }
 
-    // /** 一般帳密註冊 */
-    // @Transactional
-    // public void registerLocal(String username, String email, String rawPassword) {
-    //
-    //     // 一律轉成小寫
-    //     String normalizedEmail = email.toLowerCase().trim();
-    //
-    //     // 檢查 Email 是否已經被註冊過
-    //     if (userRepository.existsByEmail(normalizedEmail)) {
-    //         // todo 改成寄「你已有帳號」的提醒信給該 Email
-    //         throw new AuthException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
-    //     }
-    //
-    //     // Step 1: 建立並儲存主用戶表 (users)
-    //     User newUser = User.builder().username(username).email(normalizedEmail).build();
-    //     userRepository.save(newUser);
-    //
-    //     // Step 2: 密碼加鹽加密
-    //     String encodedPassword = passwordEncoder.encode(rawPassword);
-    //
-    //     // Step 3: 建立本地憑證記錄 (user_identities)
-    //     UserIdentity localIdentity =
-    //             UserIdentity.builder()
-    //                     .user(newUser)
-    //                     .provider(AuthProvider.LOCAL) // 標記為本地登入
-    //                     .providerUid(null) // 本地登入沒有第三方 UID
-    //                     .passwordHash(encodedPassword) // 塞入加密後的密碼
-    //                     .build();
-    //     userIdentityRepository.save(localIdentity);
-    // }
-
-    /** 一般帳密登入 (驗證成功就發行 JWT 門票) */
+    /** 一般帳密登入（驗證成功後簽發 JWT） */
     public String loginLocal(String email, String rawPassword, String turnstileToken) {
         // 1. 進行 Turnstile 人機驗證
         turnstileService.verifyToken(turnstileToken, null);
@@ -329,11 +291,11 @@ public class AuthenticationService {
             throw new AuthException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
-        // Step 4: 驗證成功！大方呼叫你的大管家簽發門票
+        // Step 4: 驗證成功，簽發 JWT
         return jwtUtils.generateToken(user.getId(), user.getEmail());
     }
 
-    /** * 一般帳密登出 (將 Token 送進 Redis 黑名單，並加上防時間差緩衝) */
+    /** 一般帳密登出 (將 Token 送進 Redis 黑名單，並加上防時間差緩衝) */
     public void logoutLocal(String token) {
         if (token == null) {
             return;
@@ -342,7 +304,7 @@ public class AuthenticationService {
         // 1. 呼叫 JwtUtils 的方法，算出「殘餘秒數 + 2分鐘緩衝」
         long remainingSeconds = jwtUtils.getRemainingTimeInSeconds(token);
 
-        // 2. 如果 remainingSeconds 大於 0，代表這張票在 Java 這邊還沒過期，必須加進 Redis
+        // 2. 如果 remainingSeconds 大於 0，代表 Token 還沒過期，必須加進 Redis 黑名單
         if (remainingSeconds > 0) {
 
             // 加上統一的 Key 前綴（Prefix），方便在 Redis 中分類與管理

@@ -57,7 +57,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
 
-        // 1. 最佳實踐：CORS Preflight (OPTIONS 請求) 無條件放行，確保前端跨域無障礙
+        // 1. CORS 預檢請求（OPTIONS）不會帶 Token，直接放行
         if (request.getMethod() == HttpMethod.OPTIONS) {
             return chain.filter(exchange);
         }
@@ -90,7 +90,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         String userId = claims.getSubject();
         String email = claims.get("email", String.class);
 
-        // 5. 生產級安全最佳實踐：先抹除外網客戶端可能偽造的 X-User-Id 標頭，再注入驗證通過的合法身份
+        // 5. 先移除外部請求可能偽造的 X-User-Id 標頭，再寫入驗證過的身分
         ServerHttpRequest mutatedRequest =
                 request.mutate()
                         .headers(

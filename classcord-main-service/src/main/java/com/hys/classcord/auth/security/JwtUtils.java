@@ -98,7 +98,7 @@ public class JwtUtils {
                 .getExpiration(); // 取得當初發行時設定的過期時間點
     }
 
-    /** 計算 Token 剩餘的有效時間（秒），並自動加上業界安全的防護緩衝時間（例如 2 分鐘） */
+    /** 計算 Token 剩餘的有效秒數，並加上緩衝時間以涵蓋伺服器之間的時鐘誤差 */
     public long getRemainingTimeInSeconds(String token) {
         try {
             Date expiration = getExpirationDateFromToken(token);

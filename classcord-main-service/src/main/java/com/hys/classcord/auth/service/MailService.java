@@ -28,7 +28,7 @@ public class MailService {
         this.fromEmail = fromEmail;
     }
 
-    /** 業界標準：傳入參數，動態渲染 HTML 模板並寄出 */
+    /** 依傳入參數渲染 HTML 模板並寄出 */
     @Async
     public void sendAuthMail(
             String to,

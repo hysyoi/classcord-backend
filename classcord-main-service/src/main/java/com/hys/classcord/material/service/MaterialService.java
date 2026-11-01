@@ -239,7 +239,7 @@ public class MaterialService {
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            // 只有資料庫 Commit 成功後，這裡才會被觸發！
+                            // 只有資料庫 Commit 成功後才會執行
                             finalizeMaterialUpload(ticketKey, fileSize, request, newFileKey);
                         }
                     });
@@ -358,7 +358,7 @@ public class MaterialService {
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            // 只有資料庫 Commit 成功後，這裡才會被觸發！
+                            // 只有資料庫 Commit 成功後才會執行
                             finalizeMaterialDeletion(material);
                         }
                     });

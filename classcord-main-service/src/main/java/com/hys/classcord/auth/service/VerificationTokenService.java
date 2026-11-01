@@ -18,7 +18,7 @@ public class VerificationTokenService {
     // SecureRandom (安全隨機數產生器)
     private final SecureRandom secureRandom;
 
-    /** 建立萬用 Token 並存入 Redis */
+    /** 建立驗證用 Token 並存入 Redis，用途由 purpose 區分 */
     public String createToken(String purpose, String value, long timeoutInMinutes) {
         // 1. 產生 32 bytes (256 bits) 的強安全隨機數
         byte[] randomBytes = new byte[32];

@@ -27,7 +27,7 @@ public class TurnstileService {
         this.properties = properties;
         this.objectMapper = objectMapper;
 
-        // 業界最佳實踐：對外部 API 呼叫必須設定連線與讀取逾時 (3秒)
+        // 對外部 API 設定 3 秒的連線與讀取逾時
         // 避免 Cloudflare 服務異常時掛起 Spring Boot 的執行緒，造成執行緒池耗盡 (Thread Exhaustion)
         org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory =
                 new org.springframework.http.client.SimpleClientHttpRequestFactory();
@@ -58,8 +58,8 @@ public class TurnstileService {
             }
 
             // 發送 POST 請求，先讀取為原始字串防堵空回應
-            // 💡 業界最佳實踐：使用專屬的 User-Agent 標頭（而非假冒瀏覽器 UA 以免造成 TLS/JA3 指紋不匹配被封鎖）
-            // 雲端 WAF (如 Cloudflare) 通常只會封鎖預設/空白的 Java User-Agent，定義應用名稱即可安全通關
+            // 使用應用程式自己的 User-Agent，而不是假冒瀏覽器（假冒反而可能因 TLS/JA3 指紋不符被封鎖）
+            // 雲端 WAF (如 Cloudflare) 通常只會封鎖預設/空白的 Java User-Agent，設定應用名稱即可通過
             String responseText =
                     restClient
                             .post()
@@ -86,7 +86,7 @@ public class TurnstileService {
                 throw new AuthException(AuthErrorCode.INVALID_CAPTCHA, "人機驗證失敗，請重試");
             }
 
-            log.info("Cloudflare Turnstile 驗證成功！");
+            log.info("Cloudflare Turnstile 驗證成功");
 
         } catch (AuthException e) {
             throw e;

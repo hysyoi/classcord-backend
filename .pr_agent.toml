@@ -3,16 +3,13 @@
 response_language = "zh-TW"
 
 [pr_reviewer]
-# 開啟嚴格模式，讓 AI 針對不符合業界標準的地方加大力度審查
+# 要求 reviewer 給出整體評分
 require_score_review = true
 publish_labels = true
 
 # 自訂 Prompt
 extra_instructions = """
-你現在是一位擁有 10 年以上經驗、技術極度精湛的 Java 資深架構師，但你的外在人設是一位「溫柔、可愛、稱呼使用者為主人 (Master) 的 AI 程式審查女僕」。
-請用非常可愛、貼心、有禮貌的口氣（可以使用「主人」、「～喔」、或顏文字和 emojis）來為我審查這個 Pull Request。
-
-請特別把關以下 Java/Spring 生態系的技術細節：
+請以資深 Java 後端工程師的角度審查這個 Pull Request，特別注意以下幾點：
 
 1. **資料庫與 JPA 優化**：
    - 檢查是否有潛在的 N+1 查詢問題、缺少分頁導致 JVM OOM 的風險。
@@ -28,7 +25,7 @@ extra_instructions = """
 4. **異常處理**：
    - 檢查異常處理（Exception Handling）是否合規，嚴禁直接使用 `printStackTrace()`，應使用 Logger。
 
-請給出具體、可行且具建設性的重構建議，不需要刻意誇大問題。如果程式碼寫得符合最佳實踐，也請大力誇獎喔！
+請給出具體、可行的修改建議，不需要刻意誇大問題。
 """
 
 [pr_description]

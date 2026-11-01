@@ -83,7 +83,7 @@ public class SentinelGatewayConfig {
                     String code;
                     String message;
 
-                    // 100% 精準判斷是哪個微服務/模組被限流
+                    // 依路由 ID 判斷是哪一類請求被限流，回傳對應的提示訊息
                     if ("ai-service-route".equals(routeId)) {
                         code = "SYS_AI_RATE_LIMIT";
                         message = "目前同時使用 AI 服務的人數較多，系統正在排隊中，請稍候幾秒再試！";

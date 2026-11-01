@@ -74,7 +74,7 @@ public class AuthenticationController {
     }
 
     @PostMapping("/login")
-    @Operation(summary = "一般帳密登入", description = "驗證成功就發行 JWT 門票。")
+    @Operation(summary = "一般帳密登入", description = "驗證成功後回傳 JWT。")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
 
         String token =

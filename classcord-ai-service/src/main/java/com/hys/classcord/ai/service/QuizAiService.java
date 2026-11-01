@@ -54,7 +54,7 @@ public class QuizAiService {
                             true)
                     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-    /** 背景執行 AI 出題：分段、限流、併行呼叫 LLM，並將結果透過 OpenFeign 傳回主服務 (100% 保留原版邏輯與註解) */
+    /** 背景執行 AI 出題：分段、限流、併行呼叫 LLM，並將結果透過 OpenFeign 傳回主服務 */
     public void generateQuestions(QuizGenerationMessage message) {
         UUID jobId = message.jobId();
         UUID materialId = message.materialId();
@@ -104,7 +104,7 @@ public class QuizAiService {
         }
     }
 
-    /** 疑難點 AI 分析：從 AI 消息資料庫查詢學生提問紀錄，並呼叫 LLM 進行結構化 JSON 分析 (100% 保留原版邏輯與註解) */
+    /** 疑難點 AI 分析：從 AI 消息資料庫查詢學生提問紀錄，並呼叫 LLM 進行結構化 JSON 分析 */
     public ClassDoubtResponse analyzeDoubt(UUID materialId) {
         // 效能與資源保護：在呼叫 AI 前，先拉取與檢查學生的提問紀錄。
         // 若學生無任何提問紀錄，則直接回傳空主題，避免浪費 AI Token 或引發併發鎖與頻率限制開銷。
