@@ -65,7 +65,7 @@ public class QuizService {
     private final RedisScript<Long> rateLimitScript;
     private final RedisScript<Long> unlockScript;
 
-    // 業界最佳實踐：預先配置執行緒安全的 ObjectMapper 以便重複利用
+    // ObjectMapper 是執行緒安全的，建立一次重複使用
     private final ObjectMapper quizObjectMapper =
             new ObjectMapper()
                     .configure(
@@ -564,7 +564,7 @@ public class QuizService {
         String lockValue = java.util.UUID.randomUUID().toString();
         try {
             // 4. 準備重新分析或初次分析：進行原子加鎖 (防併發)
-            // 業界最佳實踐：使用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」的原子操作，並以隨機 UUID 作為識別碼
+            // 用 setIfAbsent (SETNX) 一步完成「檢查與上鎖」；鎖的值是隨機 UUID，解鎖時才能確認是自己上的鎖
             Boolean isLockAcquired =
                     redisTemplate
                             .opsForValue()
@@ -581,7 +581,7 @@ public class QuizService {
                 throw new QuizException(QuizErrorCode.AI_ANALYSIS_RATE_LIMIT);
             }
 
-            // 雙重檢查鎖 (Double-Checked Locking) 最佳實踐：
+            // 雙重檢查（Double-Checked Locking）：
             // 當成功取得併發鎖後，再次確認 Redis 快取是否已被前一個執行緒產出並寫入。
             // 我們僅在「開始請求時無快取」的情況下才防範重複計算，以避免阻礙了 `regenerate=true` 強制重新生成的正常語意。
             if (cacheWasNullAtStart) {

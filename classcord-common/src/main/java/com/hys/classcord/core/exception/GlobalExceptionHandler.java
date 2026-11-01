@@ -78,11 +78,6 @@ public class GlobalExceptionHandler {
                                 LocalDateTime.now().toString()));
     }
 
-    // @ExceptionHandler(AsyncRequestNotUsableException.class)
-    // public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
-    //     log.warn("【連線通知】使用者在 AI 串流結束時已提前離開連線。");
-    // }
-
     /** 4. 攔截 JSON 解析失敗異常 (例如前端送了毀損的 JSON 格式) */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<?> handleHttpMessageNotReadableException(

@@ -61,13 +61,13 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void configureAsyncSupport(AsyncSupportConfigurer configurer) {
         configurer.setTaskExecutor(mvcTaskExecutor());
-        configurer.setDefaultTimeout(300_000); // 5 分鐘！防止 AI 吐字過長導致連線中斷
+        configurer.setDefaultTimeout(300_000); // 5 分鐘，避免 AI 串流回應較長時連線被中斷
     }
 
     @Bean
     public AsyncTaskExecutor mvcTaskExecutor() {
         SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor();
-        executor.setVirtualThreads(true); // 啟用 Java 21 虛擬線程！
+        executor.setVirtualThreads(true); // 使用 Java 21 虛擬執行緒
         executor.setThreadNamePrefix("mvc-virtual-");
         return executor;
     }

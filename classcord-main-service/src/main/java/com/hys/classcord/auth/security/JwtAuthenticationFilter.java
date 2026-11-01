@@ -80,42 +80,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    // @Override
-    // protected void doFilterInternal(
-    //         HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-    //         throws ServletException, IOException {
-    //
-    //     String token = parseJwt(request);
-    //
-    //     // 第一關：純數學與時間驗證 (車票本身是不是真的)
-    //     if (token != null && jwtUtils.validateToken(token)) {
-    //
-    //         // 第二關：檢查 Redis 黑名單 (看這張真車票有沒有被掛失作廢)
-    //         String redisKey = "JWT_BLACKLIST:" + token;
-    //         Boolean isBlacklisted = redisTemplate.hasKey(redisKey);
-    //
-    //         if (Boolean.TRUE.equals(isBlacklisted)) {
-    //             // 如果在黑名單內，無情作廢！
-    //             // 確保當前 Context 是乾淨的（沒有認證資訊）
-    //             SecurityContextHolder.clearContext();
-    //             // 直接放行讓它往後走，後面的 Spring Security 門神看到他沒認證資訊，自然會把他彈飛 (401)
-    //             filterChain.doFilter(request, response);
-    //             return;
-    //         }
-    //
-    //         // --- 通過兩道防線，成功放行並注入認證資訊 ---
-    //         String userId = jwtUtils.getUserIdFromToken(token);
-    //
-    //         UsernamePasswordAuthenticationToken authentication =
-    //                 new UsernamePasswordAuthenticationToken(
-    //                         UUID.fromString(userId), null, Collections.emptyList());
-    //
-    //         SecurityContextHolder.getContext().setAuthentication(authentication);
-    //     }
-    //
-    //     filterChain.doFilter(request, response);
-    // }
-
     private String parseJwt(HttpServletRequest request) {
         String headerAuth = request.getHeader("Authorization");
         if (StringUtils.hasText(headerAuth) && headerAuth.startsWith("Bearer ")) {

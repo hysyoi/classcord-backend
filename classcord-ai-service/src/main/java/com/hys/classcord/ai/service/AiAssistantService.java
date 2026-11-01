@@ -204,7 +204,7 @@ public class AiAssistantService {
                 .doOnNext(fullReply::append)
                 .doOnComplete(
                         () -> {
-                            // 非常重要！！保證線程安全
+                            // 先在這裡轉成字串，再交給其他執行緒存檔，避免跨執行緒共用 StringBuilder
                             String finalReply = fullReply.toString();
                             Mono.fromRunnable(() -> saveAssistantMessage(sessionId, finalReply))
                                     .subscribeOn(Schedulers.boundedElastic())

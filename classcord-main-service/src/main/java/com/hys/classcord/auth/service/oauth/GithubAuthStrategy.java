@@ -129,7 +129,7 @@ public class GithubAuthStrategy implements OAuth2Strategy {
             }
         }
 
-        // 終極防線：拿不到 Email
+        // 所有方式都取不到 Email
         if (email == null || email.isBlank()) {
             throw new AuthException(
                     AuthErrorCode.OAUTH_EMAIL_NOT_FOUND, "您的 GitHub 帳號未綁定或未公開已驗證的 Email");
