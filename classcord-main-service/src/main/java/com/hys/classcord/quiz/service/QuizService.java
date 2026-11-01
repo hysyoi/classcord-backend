@@ -65,6 +65,15 @@ public class QuizService {
     private final RedisScript<Long> rateLimitScript;
     private final RedisScript<Long> unlockScript;
 
+    /** 每份測驗的題數 */
+    private static final int QUESTIONS_PER_QUIZ = 10;
+
+    /** 每份教材的有效題庫上限 */
+    private static final int MAX_QUESTION_POOL_SIZE = 50;
+
+    /** 班級錯題統計最多讀取的作答紀錄筆數 */
+    private static final int CLASS_STATS_RECORD_LIMIT = 10_000;
+
     // ObjectMapper 是執行緒安全的，建立一次重複使用
     private final ObjectMapper quizObjectMapper =
             new ObjectMapper()
@@ -112,24 +121,17 @@ public class QuizService {
 
         // 2. 校驗教師/TA 權限
         UUID serverId = materialRepository.findServerIdById(materialId);
-        ServerMember member =
-                serverMemberRepository
-                        .findByServerIdAndUserId(serverId, userId)
-                        .orElseThrow(() -> new QuizException(QuizErrorCode.NOT_SERVER_MEMBER));
-
-        if (member.getRole() != ServerRole.TEACHER && member.getRole() != ServerRole.TA) {
-            throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "只有教師與助教(TA)可以管理與生成題庫");
-        }
+        requireCanManage(serverId, userId, "只有教師與助教(TA)可以管理與生成題庫");
 
         // 3. 題庫容量上限防護 (防刷防惡意耗能)
         long existingCount =
                 materialQuestionRepository.countByMaterialIdAndIsDeletedFalse(materialId);
-        if (existingCount + count > 50) {
+        if (existingCount + count > MAX_QUESTION_POOL_SIZE) {
             throw new QuizException(
                     QuizErrorCode.POOL_LIMIT_EXCEEDED,
                     String.format(
-                            "該教材的有效題庫已達上限。目前已有 %d 題，本次出題要求新增 %d 題，將超出上限 50 題。",
-                            existingCount, count));
+                            "該教材的有效題庫已達上限。目前已有 %d 題，本次出題要求新增 %d 題，將超出上限 %d 題。",
+                            existingCount, count, MAX_QUESTION_POOL_SIZE));
         }
 
         // 4. 建立出題工作 Job 狀態追蹤 (立刻寫入以防異步讀不到)
@@ -181,14 +183,7 @@ public class QuizService {
                                 () -> new MaterialException(MaterialErrorCode.MATERIAL_NOT_FOUND));
 
         UUID serverId = materialRepository.findServerIdById(materialId);
-        ServerMember member =
-                serverMemberRepository
-                        .findByServerIdAndUserId(serverId, userId)
-                        .orElseThrow(() -> new QuizException(QuizErrorCode.NOT_SERVER_MEMBER));
-
-        if (member.getRole() != ServerRole.TEACHER && member.getRole() != ServerRole.TA) {
-            throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "只有教師與助教(TA)可以查看完整題庫");
-        }
+        requireCanManage(serverId, userId, "只有教師與助教(TA)可以查看完整題庫");
 
         List<MaterialQuestion> questions =
                 materialQuestionRepository.findByMaterialIdAndIsDeletedFalse(materialId);
@@ -214,19 +209,12 @@ public class QuizService {
                         .orElseThrow(() -> new QuizException(QuizErrorCode.QUESTION_NOT_FOUND));
 
         UUID serverId = materialQuestionRepository.findServerIdById(questionId);
-        ServerMember member =
-                serverMemberRepository
-                        .findByServerIdAndUserId(serverId, userId)
-                        .orElseThrow(() -> new QuizException(QuizErrorCode.NOT_SERVER_MEMBER));
-
-        if (member.getRole() != ServerRole.TEACHER && member.getRole() != ServerRole.TA) {
-            throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "只有教師與助教(TA)可以刪除考題");
-        }
+        requireCanManage(serverId, userId, "只有教師與助教(TA)可以刪除考題");
 
         question.markAsDeleted();
     }
 
-    /** 學生：發起個人自主測驗 (隨機抽選 10 題並隱藏答案，saveAll 批次寫入) */
+    /** 學生：發起個人自主測驗 (隨機抽題並隱藏答案，saveAll 批次寫入) */
     @Transactional
     public QuizResponse createQuiz(UUID studentId, UUID materialId) {
         Material material =
@@ -241,10 +229,10 @@ public class QuizService {
             throw new QuizException(QuizErrorCode.NOT_SERVER_MEMBER);
         }
 
-        // 2. 檢查可用題庫數量是否大於等於 10 題
+        // 2. 檢查可用題庫數量是否足夠出一份測驗
         long activeQuestionCount =
                 materialQuestionRepository.countByMaterialIdAndIsDeletedFalse(materialId);
-        if (activeQuestionCount < 10) {
+        if (activeQuestionCount < QUESTIONS_PER_QUIZ) {
             throw new QuizException(QuizErrorCode.INSUFFICIENT_POOL_QUESTIONS);
         }
 
@@ -273,9 +261,10 @@ public class QuizService {
                     quiz.getId(), material.getId(), null, quiz.getCreatedAt(), questionResponses);
         }
 
-        // 4. 隨機抽選 10 題 (使用資料庫層 ORDER BY RANDOM() LIMIT 10 原生隨機抽樣優化)
+        // 4. 隨機抽題 (在資料庫層用 ORDER BY RANDOM() LIMIT 抽樣)
         List<MaterialQuestion> selectedQuestions =
-                materialQuestionRepository.findRandomQuestionsByMaterialId(materialId, 10);
+                materialQuestionRepository.findRandomQuestionsByMaterialId(
+                        materialId, QUESTIONS_PER_QUIZ);
 
         // 5. 建立 Quiz 紀錄
         User student =
@@ -359,8 +348,8 @@ public class QuizService {
                             mq.getExplanation()));
         }
 
-        // 計算分數 (一題 10 分，總共 10 題 = 100 分)
-        int finalScore = correctCount * 10;
+        // 滿分 100 分，依題數平均分配
+        int finalScore = correctCount * 100 / QUESTIONS_PER_QUIZ;
         quiz.updateScore(finalScore);
 
         return new QuizSubmitResponse(
@@ -443,22 +432,16 @@ public class QuizService {
             UUID userId, UUID materialId) {
         // 1. 驗證權限 (限教師與助教)
         UUID serverId = materialRepository.findServerIdById(materialId);
-        ServerMember member =
-                serverMemberRepository
-                        .findByServerIdAndUserId(serverId, userId)
-                        .orElseThrow(() -> new QuizException(QuizErrorCode.NOT_SERVER_MEMBER));
-        if (member.getRole() != ServerRole.TEACHER && member.getRole() != ServerRole.TA) {
-            throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "只有教師與助教(TA)可以查看班級分析");
-        }
+        requireCanManage(serverId, userId, "只有教師與助教(TA)可以查看班級分析");
 
         // 2. 撈取該教材的所有題庫題目
         List<MaterialQuestion> questions =
                 materialQuestionRepository.findByMaterialIdAndIsDeletedFalse(materialId);
 
-        // 3. 撈取該教材的所有已提交作答記錄 (以 DTO 輕量化投影防範 OOM 與 ClassCastException，限制最多統計最近 10,000 筆答題紀錄)
+        // 3. 撈取該教材的所有已提交作答記錄 (以 DTO 輕量化投影防範 OOM 與 ClassCastException，並限制統計筆數上限)
         List<LightweightQuizQuestionDto> rawRecords =
                 quizQuestionRepository.findLightweightSubmittedQuestionsByMaterialId(
-                        materialId, Limit.of(10000));
+                        materialId, Limit.of(CLASS_STATS_RECORD_LIMIT));
 
         // 4. 將答題記錄按問題 ID 分組
         Map<UUID, List<LightweightRecord>> qqGroup = new HashMap<>();
@@ -527,13 +510,7 @@ public class QuizService {
             UUID userId, UUID materialId, boolean regenerate) {
         // 1. 驗證權限 (限教師與助教)
         UUID serverId = materialRepository.findServerIdById(materialId);
-        ServerMember member =
-                serverMemberRepository
-                        .findByServerIdAndUserId(serverId, userId)
-                        .orElseThrow(() -> new QuizException(QuizErrorCode.NOT_SERVER_MEMBER));
-        if (member.getRole() != ServerRole.TEACHER && member.getRole() != ServerRole.TA) {
-            throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, "只有教師與助教(TA)可以查看班級分析");
-        }
+        requireCanManage(serverId, userId, "只有教師與助教(TA)可以查看班級分析");
 
         // 新增快取、鎖、頻率key
         String cacheKey = "doubt_analysis:cache:" + materialId;
@@ -627,4 +604,15 @@ public class QuizService {
     }
 
     private record LightweightRecord(Boolean isCorrect, List<String> userAnswer) {}
+
+    /** 確認使用者是該班級的老師或助教，否則丟出例外 */
+    private void requireCanManage(UUID serverId, UUID userId, String deniedMessage) {
+        ServerMember member =
+                serverMemberRepository
+                        .findByServerIdAndUserId(serverId, userId)
+                        .orElseThrow(() -> new QuizException(QuizErrorCode.NOT_SERVER_MEMBER));
+        if (!member.getRole().canManage()) {
+            throw new QuizException(QuizErrorCode.INSUFFICIENT_PERMISSIONS, deniedMessage);
+        }
+    }
 }
