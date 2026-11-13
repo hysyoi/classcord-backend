@@ -21,6 +21,7 @@ import com.hys.classcord.auth.repository.UserIdentityRepository;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
 import com.hys.classcord.core.config.AppUrlProperties;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -234,6 +235,14 @@ class AuthenticationServiceTest {
         when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS)))
                 .thenReturn(true);
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(userIdentityRepository.findByUser(user))
+                .thenReturn(
+                        List.of(
+                                UserIdentity.builder()
+                                        .user(user)
+                                        .provider(AuthProvider.LOCAL)
+                                        .passwordHash("hash")
+                                        .build()));
         when(tokenService.createToken("RESET_PASSWORD", "user@example.com", 15))
                 .thenReturn("reset-token-abc");
 
@@ -250,6 +259,41 @@ class AuthenticationServiceTest {
                         anyString(),
                         eq("http://localhost:3000/reset-password?token=reset-token-abc"),
                         anyString());
+    }
+
+    // 純第三方登入帳號（沒有本地密碼），不該產生重設 Token，
+    // 而是改寄「請使用 Google 登入」的提醒信，連結指向登入頁
+    @Test
+    void sendResetPasswordLink_sendsThirdPartyLoginNotice_whenUserHasNoLocalCredential() {
+        User user = buildUser("oauth-only@example.com");
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.SECONDS)))
+                .thenReturn(true);
+        when(userRepository.findByEmail("oauth-only@example.com")).thenReturn(Optional.of(user));
+        when(userIdentityRepository.findByUser(user))
+                .thenReturn(
+                        List.of(
+                                UserIdentity.builder()
+                                        .user(user)
+                                        .provider(AuthProvider.GOOGLE)
+                                        .providerUid("google-uid-123")
+                                        .build()));
+
+        authenticationService.sendResetPasswordLink("oauth-only@example.com", "turnstile-token");
+
+        verifyNoInteractions(tokenService);
+        ArgumentCaptor<String> contentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mailService)
+                .sendAuthMail(
+                        eq("oauth-only@example.com"),
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        contentCaptor.capture(),
+                        anyString(),
+                        eq("http://localhost:3000/login"),
+                        anyString());
+        assertThat(contentCaptor.getValue()).contains("Google");
     }
 
     // Email 沒註冊過，基於防止帳號枚舉攻擊的考量，應該靜默忽略——不寄信、不產生 Token，
@@ -479,7 +523,8 @@ class AuthenticationServiceTest {
                 .isEqualTo(AuthErrorCode.INVALID_CREDENTIALS.getCode());
     }
 
-    // 使用者存在，但沒有本地密碼憑證（純第三方登入帳號），不該允許透過這條路徑設定密碼
+    // 使用者存在，但沒有本地密碼憑證（純第三方登入帳號），不該允許透過這條路徑設定密碼。
+    // 正常流程在階段一就不會發出 Token，這裡是防禦性的第二道防線
     @Test
     void executePasswordReset_throwsLocalIdentityNotFound_whenUserHasNoLocalCredential() {
         User user = buildUser("oauth-only@example.com");

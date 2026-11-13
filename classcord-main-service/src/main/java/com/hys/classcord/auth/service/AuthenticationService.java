@@ -12,8 +12,10 @@ import com.hys.classcord.auth.repository.UserIdentityRepository;
 import com.hys.classcord.auth.repository.UserRepository;
 import com.hys.classcord.auth.security.JwtUtils;
 import com.hys.classcord.core.config.AppUrlProperties;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -73,10 +75,10 @@ public class AuthenticationService {
                     "【Classcord】帳戶重複註冊提醒",
                     "REGISTER",
                     "帳戶已存在提醒",
-                    "您好：我們收到了一筆使用此電子郵件註冊 Classcord 的請求。然而，此信箱已經在平台註冊過帳戶，我們無法為您重複建立帳戶。如果您忘記密碼，請點擊下方按鈕前往登入頁面，並使用「忘記密碼」功能重設密碼。",
+                    "您好：我們收到了一筆使用此電子郵件註冊 Classcord 的請求。然而，此信箱已經在平台註冊過帳戶，我們無法為您重複建立帳戶。如果您忘記密碼，請點擊下方按鈕前往登入頁面，並使用「忘記密碼」功能重設密碼；若您當初是使用 Google、GitHub 或 Discord 登入，請直接選擇該方式登入。",
                     "前往登入頁面",
                     appUrlProperties.getFrontend() + "/login",
-                    "如果您並未進行此操作，請忽略此郵件，您的帳戶目前非常安全。");
+                    "如果您並未進行此操作，請忽略此郵件。");
             return;
         }
 
@@ -192,6 +194,31 @@ public class AuthenticationService {
             Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
 
             if (userOpt.isPresent()) {
+                // 純第三方登入帳號（沒有本地密碼）不發重設連結：
+                // 不讓信箱被盜連帶讓帳號被盜，改寄提醒信告知當初的登入方式
+                List<UserIdentity> identities = userIdentityRepository.findByUser(userOpt.get());
+                boolean hasLocalIdentity =
+                        identities.stream().anyMatch(i -> i.getProvider() == AuthProvider.LOCAL);
+
+                if (!hasLocalIdentity) {
+                    String providers = toProviderNames(identities);
+                    mailService.sendAuthMail(
+                            normalizedEmail,
+                            "【Classcord】您的帳號使用第三方登入",
+                            "RESET",
+                            "無需重設密碼",
+                            "我們收到了您重設 Classcord 帳戶密碼的請求。您的帳戶是透過 "
+                                    + providers
+                                    + " 登入，並未設定 Classcord 密碼，因此無法重設。請點擊下方按鈕前往登入頁面，並選擇使用 "
+                                    + providers
+                                    + " 登入。",
+                            "前往登入頁面",
+                            appUrlProperties.getFrontend() + "/login",
+                            "若您並未發起此請求，請忽略本信件。");
+                    log.info("忘記密碼請求：純第三方登入帳號，改寄登入方式提醒: {}", normalizedEmail);
+                    return;
+                }
+
                 // 這裡不需要包成 DTO，因為重設密碼時，我們只需要在 Redis 記住「是哪一個 Email 發起重設的」即可
                 // 產生用途為 "RESET_PASSWORD" 的 Token，效期 15 分鐘
                 String token = tokenService.createToken("RESET_PASSWORD", normalizedEmail, 15);
@@ -219,6 +246,25 @@ public class AuthenticationService {
             redisTemplate.delete(rateLimitKey);
             throw new RuntimeException("重設密碼憑證產生失敗", e);
         }
+    }
+
+    /** 把使用者綁定的登入方式轉成信件裡顯示的名稱，例如「Google、GitHub」。 只在「沒有本地身分」時呼叫，所以清單裡實際上只會有第三方平台 */
+    private String toProviderNames(List<UserIdentity> identities) {
+        String names =
+                identities.stream()
+                        .map(UserIdentity::getProvider)
+                        .distinct()
+                        .map(
+                                provider ->
+                                        switch (provider) {
+                                            case GOOGLE -> "Google";
+                                            case GITHUB -> "GitHub";
+                                            case DISCORD -> "Discord";
+                                            case LOCAL -> "帳號密碼";
+                                        })
+                        .collect(Collectors.joining("、"));
+        // 理論上不會發生（純第三方帳號至少有一筆身分），保底避免信件出現空白
+        return names.isEmpty() ? "第三方平台" : names;
     }
 
     /** 忘記密碼階段二：持有效 Token 正式覆蓋舊密碼（落地 DB ） */
