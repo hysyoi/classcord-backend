@@ -8,7 +8,7 @@ data:
   DROPLET2_PRIVATE_IP: 10.104.0.2
   GITHUB_CLIENT_ID: Ov23lih9e4kjMuJ5PIXu
   GOOGLE_CLIENT_ID: 1071718096245-ragm4g01sh0549g1u7oqnmmbto5p6egr.apps.googleusercontent.com
-  MAIL_FROM_EMAIL: noreply@hys-lab.com
+  MAIL_FROM_EMAIL: noreply@classcord.hys-lab.com
   NACOS_NAMESPACE: prod
   NACOS_SERVER_ADDR: nacos:8848
   S3_BUCKET_NAME: classcord
