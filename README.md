@@ -64,53 +64,9 @@
 
 <br />
 
-```mermaid
-flowchart TB
-    Client(["Web / Mobile Client"])
+![Classcord 架構圖](https://github.com/user-attachments/assets/8b97ef85-a4f9-4aa0-a6f6-c528e530de3e)
+<!-- <img width="2204" height="1804" alt="architecture-scheme-D05-rounded-24" src="https://github.com/user-attachments/assets/8b97ef85-a4f9-4aa0-a6f6-c528e530de3e" /> -->
 
-    subgraph GW["API Gateway :8080"]
-        Gateway["Spring Cloud Gateway - <br/>路由轉發 · Swagger 聚合"]
-    end
-
-    subgraph APP["應用服務層"]
-        direction LR
-        Main["Main Service :8081 - <br/>Auth · Server / Channel<br/> · Message · Presence<br/> · Quiz · Material"]
-        AI["AI Service :8082 - <br/>RAG Indexing · AI Chat · Doubt Analysis"]
-    end
-
-    subgraph MQL["非同步佇列層"]
-        MQ{{"RabbitMQ - <br/>訊息落地 · 檔案搬移 · 出題任務 · RAG 索引處理"}}
-    end
-
-    subgraph GOV["服務治理（Spring Cloud）"]
-        direction LR
-        Nacos["Nacos<br/>服務註冊 / 配置中心"]
-        Sentinel["Sentinel<br/>流量控制"]
-        Seata["Seata<br/>分散式事務"]
-    end
-
-    subgraph DATA["資料層"]
-        direction LR
-        PG[("PostgreSQL<br/>+ pgvector")]
-        Redis[("Redis<br/>快取 / 上線狀態 / 分散式鎖")]
-        B2[("Backblaze B2<br/>教材原始檔")]
-    end
-
-    Client --> Gateway
-    Gateway --> Main
-    Gateway --> AI
-
-    Main -- "疑問分析請求（Feign）" --> AI
-    AI -- "教材狀態回報 / 出題結果（Feign）" --> Main
-
-    Main -.-> MQ
-    MQ -.-> Main
-    AI -.-> MQ
-    MQ -.-> AI
-
-    Main --> PG & Redis & B2
-    AI --> PG & Redis & B2
-```
 ### 核心流程：教材啟用 AI 助教（RAG 向量化）
 ```mermaid
 sequenceDiagram
